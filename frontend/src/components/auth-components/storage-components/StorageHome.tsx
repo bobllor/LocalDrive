@@ -21,7 +21,7 @@ export default function StorageHome(): JSX.Element{
             // TODO: log proper
             console.error(e, "an error occurred");
         })
-    }, []);
+    }, [params.folderId]);
 
     /**
      * Logouts the current validated user. This uses the session ID found
