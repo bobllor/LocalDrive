@@ -29,6 +29,7 @@ export type File = {
     fileType: string
     fileID: string
     parentID: string
+    fileSize: number
     modifiedOn: Date
     deletedOn?: Date
 }
