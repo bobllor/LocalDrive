@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 
 	dbgateway "github.com/bobllor/cloud-project/src/db_gateway"
@@ -8,9 +9,12 @@ import (
 	"github.com/bobllor/gologger"
 )
 
+const PARENT_ID_KEY = "parentID"
+
+var FileGetFileParentRoute = fmt.Sprintf("GET /api/storage/folder/{%s}", PARENT_ID_KEY)
+
 const (
-	FileGetFileParentRoute = "GET /storage/folder/{parentID}"
-	FileGetFileRootRoute   = "GET /storage"
+	FileGetFileRootRoute = "GET /api/storage"
 )
 
 type FileHandler struct {
@@ -29,13 +33,12 @@ func NewFileHandler(gw *dbgateway.Gateway, logger *gologger.Logger) *FileHandler
 // parent folder ID.
 //
 // If a parent folder ID is given, it will retrieve those parent folder files.
-// If parent folder is nil, then it will retrieve the files with a nil parent.
+// If parent folder is nil, then it will retrieve the files with a nil parent or the
+// root children.
 //
 // This requires the auth middleware session ID.
 func (fh *FileHandler) GetFiles(w http.ResponseWriter, r *http.Request) {
-	parentKey := "parentID"
-
-	parentID := r.PathValue(parentKey)
+	parentID := r.PathValue(PARENT_ID_KEY)
 	fh.deps.Log.Debugf("Request query: %v", parentID)
 
 	sesID := GetSessionFromCookie(r)

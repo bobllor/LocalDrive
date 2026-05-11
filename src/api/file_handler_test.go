@@ -31,7 +31,7 @@ func TestGetFilesBySessionAndParent(t *testing.T) {
 	}
 
 	t.Run("Root files", func(t *testing.T) {
-		req, err := http.NewRequest("GET", tsv.URL+"/storage", bytes.NewBuffer([]byte{}))
+		req, err := http.NewRequest("GET", tsv.URL+"/api/storage", bytes.NewBuffer([]byte{}))
 		assert.Nil(t, err)
 
 		req.AddCookie(cookie)
@@ -60,7 +60,7 @@ func TestGetFilesBySessionAndParent(t *testing.T) {
 	t.Run("Child files from folder", func(t *testing.T) {
 		// obtained from sql script in sql test db
 		folder := "randomfolderidhere"
-		req, err := http.NewRequest("GET", tsv.URL+"/storage/folder/"+folder, bytes.NewBuffer([]byte{}))
+		req, err := http.NewRequest("GET", tsv.URL+"/api/storage/folder/"+folder, bytes.NewBuffer([]byte{}))
 		assert.Nil(t, err)
 
 		req.AddCookie(cookie)
@@ -88,7 +88,7 @@ func TestGetFilesBySessionAndParent(t *testing.T) {
 
 	t.Run("Invalid folder", func(t *testing.T) {
 		folder := "nonexistentidhere"
-		req, err := http.NewRequest("GET", tsv.URL+"/storage/folder/"+folder, bytes.NewBuffer([]byte{}))
+		req, err := http.NewRequest("GET", tsv.URL+"/api/storage/folder/"+folder, bytes.NewBuffer([]byte{}))
 		assert.Nil(t, err)
 
 		req.AddCookie(cookie)

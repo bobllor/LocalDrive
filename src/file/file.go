@@ -167,3 +167,13 @@ type File struct {
 	// This must be in UTC.
 	DeletedOn *time.Time `json:"deletedOn"`
 }
+
+type FileResponse struct {
+	Name       string     `json:"fileName"`
+	Type       string     `json:"fileType"`
+	FileID     string     `json:"fileID"`
+	ParentID   *string    `json:"parentID"`
+	Size       int64      `json:"fileSize"`
+	ModifiedOn time.Time  `json:"modifedOn"`
+	DeletedOn  *time.Time `json:"deletedOn"`
+}

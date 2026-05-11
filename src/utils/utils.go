@@ -3,6 +3,7 @@ package utils
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -43,4 +44,38 @@ func GetFiles(root string) (map[string]string, error) {
 	}
 
 	return files, nil
+}
+
+// StructToAny flattens a struct into an any slice, maintaining
+// the field order from top to bottom in the slice.
+//
+// Nil values will return an empty slice.
+//
+// If the given value is not a struct, then it will return an empty slice.
+func StructToAny(s any) []any {
+	out := []any{}
+	v := reflect.ValueOf(s)
+	v = getReflectValue(v)
+
+	if v.Kind() != reflect.Struct {
+		return out
+	}
+
+	for i := range v.NumField() {
+		fieldValue := v.Field(i).Interface()
+
+		out = append(out, fieldValue)
+	}
+
+	return out
+}
+
+// getReflectValue gets the value of s. It is a recursive function
+// that will return the first non-pointer value.
+func getReflectValue(v reflect.Value) reflect.Value {
+	if v.Kind() == reflect.Pointer {
+		return getReflectValue(v.Elem())
+	}
+
+	return v
 }
