@@ -33,14 +33,14 @@ type SqlInsert struct {
 // and any column arguments.
 //
 // It will return a SqlArgs for inserting arguments for each column.
-func InsertInto(tableName string, columns ...string) *SqlArgs {
+func InsertInto(tableName string, columns ...string) *SqlArgs[*SqlInsert] {
 	s := &SqlInsert{
 		TableName:    tableName,
 		columns:      columns,
 		queryBuilder: &QueryBuilder{},
 	}
 
-	sargs := &SqlArgs{
+	sargs := &SqlArgs[*SqlInsert]{
 		builder: s,
 	}
 
