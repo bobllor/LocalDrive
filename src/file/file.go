@@ -168,6 +168,9 @@ type File struct {
 	DeletedOn *time.Time `json:"deletedOn"`
 }
 
+// FileResponse is the struct representing a File object
+// from the backend. It is the same struct as File, excluding
+// the field FilePath.
 type FileResponse struct {
 	Name       string     `json:"fileName"`
 	Type       string     `json:"fileType"`
