@@ -48,7 +48,7 @@ func (u *SqlUpdate) Write(args ...any) {
 func (u *SqlUpdate) Build() (string, []any, error) {
 	setQ := BuildSetPlaceholder(u.columns)
 	mainQ := fmt.Sprintf(
-		"UPDATE %s %s",
+		"UPDATE %s SET %s",
 		u.TableName,
 		setQ,
 	)
