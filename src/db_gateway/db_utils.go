@@ -138,18 +138,17 @@ func UpdateRow(db *sql.DB, table string, whereColumn string, whereArg any, claus
 //
 // column is used to target the column where the row is in the given slice of args.
 func DropRows(db *sql.DB, table string, column string, args ...any) (sql.Result, error) {
-	cb := NewClauseBuilder()
+	pargsStr := BuildPlaceholder(len(args), 1)
+	query := fmt.Sprintf(`
+		DELETE FROM %s
+		WHERE %s IN %s
+		`,
+		table,
+		column,
+		pargsStr,
+	)
 
-	cb.In(column, args...)
-
-	cbQ, newArgs, err := cb.Build()
-	if err != nil {
-		return nil, err
-	}
-
-	query := fmt.Sprintf("DELETE FROM %s", table) + " " + cbQ
-
-	res, err := execQuery(db, query, newArgs...)
+	res, err := execQuery(db, query, args...)
 	if err != nil {
 		return nil, err
 	}
