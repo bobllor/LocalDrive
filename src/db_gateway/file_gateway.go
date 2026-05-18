@@ -7,13 +7,15 @@ import (
 	"time"
 
 	"github.com/bobllor/cloud-project/src/file"
-	"github.com/bobllor/cloud-project/src/session"
 	"github.com/bobllor/cloud-project/src/sqlquery"
+	"github.com/bobllor/cloud-project/src/user"
 	"github.com/bobllor/cloud-project/src/utils"
 )
 
 var (
 	FileDoesNotExistErr = errors.New("given file ID does not exist")
+	// Any errors related to SQL, such as building or querying.
+	SqlErr = errors.New("an error occurred on the database server")
 )
 
 // NewFileGateway creates a new FileGateway for database related options.
@@ -37,29 +39,68 @@ type FileGateway struct {
 //
 // If an error occurs then it will return an error, and abort
 // the scanning process if it is occurring.
-func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.File, error) {
-	cb := NewClauseBuilder()
-	baseQuery := fmt.Sprintf("SELECT * FROM %s", file.TableName)
-	cb.Equal(file.ColumnFileOwnerID, fileOwnerID)
-
-	con, args, err := cb.Build()
+func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, error) {
+	query, args, err := sqlquery.Select(
+		file.TableName,
+		file.ColumnFileName, file.ColumnFileType,
+		file.ColumnFileID, file.ColumnParentID,
+		file.ColumnFileSize, file.ColumnModifiedOn,
+		file.ColumnDeletedOn,
+	).Where().Equal(file.ColumnFileOwnerID, fileOwnerID).Build()
 	if err != nil {
-		return nil, fmt.Errorf("failed to build conditions: %v", err)
+		f.deps.Log.Criticalf("Failed to build query: %v | Query: %s | Args: %d", err, query, len(args))
+		return nil, SqlErr
 	}
-
-	query := baseQuery + " " + con
 
 	rows, err := f.database.Query(query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query %s: %v | query: %s", file.TableName, err, query)
+		f.deps.Log.Criticalf("Failed to execute query: %v | Query: %s", err, query)
+		return nil, SqlErr
 	}
 
-	files, err := f.getFiles(rows)
+	var files []file.FileResponse
+	err = SelectRows(rows, &files)
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan rows: %v", err)
+		f.deps.Log.Criticalf("Failed to retrieve data from query: %v | Query: %s", err, query)
+		return nil, SqlErr
 	}
 
 	return files, nil
+}
+
+// GetFile retrieves a single file based on the given file ID.
+//
+// If the file does not exist, it will return nil. This must be handled.
+func (f *FileGateway) GetFile(fileOwnerId string, fileId string) (*file.FileResponse, error) {
+	q, args, err := sqlquery.Select(
+		file.TableName,
+		file.ColumnFileName, file.ColumnFileType,
+		file.ColumnFileID, file.ColumnParentID,
+		file.ColumnFileSize, file.ColumnModifiedOn,
+		file.ColumnDeletedOn,
+	).Where().Equal(file.ColumnFileOwnerID, fileOwnerId).And().Equal(file.ColumnFileID, fileId).Build()
+	if err != nil {
+		f.deps.Log.Criticalf("Failed to build query to update: %v | Query: %s | Args: %d", err, q, len(args))
+		return nil, SqlErr
+	}
+
+	rows, err := f.database.Query(q, args...)
+	if err != nil {
+		f.deps.Log.Criticalf("Failed to execute query: %v | Query: %s", err, q)
+		return nil, SqlErr
+	}
+
+	var fr []file.FileResponse
+	err = SelectRows(rows, &fr)
+	if err != nil {
+		f.deps.Log.Criticalf("Failed to retrieve data from query: %v | Query: %s", err, q)
+		return nil, SqlErr
+	}
+	if len(fr) == 0 {
+		return nil, nil
+	}
+
+	return &fr[0], nil
 }
 
 // GetFiles returns File rows based on the clause and conditions.
@@ -183,6 +224,29 @@ func (f *FileGateway) AddFile(files []file.File) error {
 	return nil
 }
 
+// RenameFile renames a file to a new file name. This requires the fileId
+// in order to rename.
+//
+// This will also update the modified date time.
+func (f *FileGateway) RenameFile(accountId, fileId, newFileName string) error {
+	q, args, err := sqlquery.Update(file.TableName, file.ColumnFileName, file.ColumnModifiedOn).
+		Args(newFileName, time.Now().UTC()).Where().Equal(file.ColumnFileID, fileId).
+		And().Equal(file.ColumnFileOwnerID, accountId).Build()
+	if err != nil {
+		f.deps.Log.Criticalf("Failed to build query to update: %v | Query: %s | Args: %d", err, q, len(args))
+		return errors.New("an error occurred on the server")
+	}
+
+	res, err := execQuery(f.database, q, args...)
+	if err != nil {
+		f.deps.Log.Criticalf("Failed to update file name: %v | query: %s", err, q)
+		return fmt.Errorf("failed to update file name: %v", err)
+	}
+	logResultRows(f.deps.Log, res)
+
+	return nil
+}
+
 // UpdateModifiedFiles updates the modified date column to the current time.
 func (f *FileGateway) UpdateModifiedFiles(fileOwnerID string, fileIDs []string) error {
 	cb := NewClauseBuilder()
@@ -277,13 +341,12 @@ func (f *FileGateway) RestoreFiles(fileOwnerID string, fileIDs []string) error {
 	return nil
 }
 
-// GetFilesBySessionAndParentFolder retrieves the files based on the session ID and the parent
-// of the folder.
+// GetFilesByAccountIdAndParentId retrieves the files of a given folder ID.
 //
-// If the parentFolderID does not exist, it will return a 404 and error.
-func (f *FileGateway) GetFilesBySessionAndParentFolder(sessionID string, parentFolderID string) ([]file.File, error) {
+// If the given parent folder ID does not exist, it will return a 404 and an error.
+func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFolderID string) ([]file.File, error) {
 	if parentFolderID != "" {
-		validID, err := f.validateFileExists(sessionID, parentFolderID)
+		validID, err := f.validateFileExists(accountId, parentFolderID)
 		if err != nil {
 			f.deps.Log.Criticalf("Failed to validate file (database error): %v", err)
 			return nil, err
@@ -295,15 +358,7 @@ func (f *FileGateway) GetFilesBySessionAndParentFolder(sessionID string, parentF
 		}
 	}
 
-	// joins are raw SQL, not going to make it into an ORM due to how complex it is
-	// creates the basic main query for combination with join
-	// the WHERE clause is appended later
-	mainQuery, _, err := sqlquery.Select(fmt.Sprintf("%s f", file.TableName), "f.*").Build()
-	if err != nil {
-		return nil, fmt.Errorf("failed to build query: %v", err)
-	}
-
-	args := []any{sessionID}
+	args := []any{accountId}
 	parentCondition := "= ?"
 	if parentFolderID == "" {
 		parentCondition = "IS NULL"
@@ -312,16 +367,17 @@ func (f *FileGateway) GetFilesBySessionAndParentFolder(sessionID string, parentF
 	}
 
 	query := fmt.Sprintf(`
-		%s 
+		SELECT f.*
+		FROM %s f 
 		JOIN %s 
-			ON s.%s = f.%s 
-		WHERE s.%s = ? AND %s %s
+			ON u.%s = f.%s 
+		WHERE u.%s = ? AND f.%s %s
 		`,
-		mainQuery,
-		fmt.Sprintf("%s s", session.TableName),
-		session.ColumnAccountID,
+		file.TableName,
+		fmt.Sprintf("%s u", user.TableName),
+		user.ColumnAccountID,
 		file.ColumnFileOwnerID,
-		session.ColumnSessionID,
+		user.ColumnAccountID,
 		file.ColumnParentID,
 		parentCondition,
 	)
@@ -341,36 +397,40 @@ func (f *FileGateway) GetFilesBySessionAndParentFolder(sessionID string, parentF
 
 // validateFileExists checks if the folder ID has the correct formatting and
 // a database query if it exists in the table.
-// It requires the session ID in order to check for the existence of the folder.
+// It requires the account ID in order to check for the existence of the folder to the correct
+// owner.
 //
 // If no errors occur it will return true for validation. Any failures will return false.
 // If an error occurs, it will return an error.
-func (f *FileGateway) validateFileExists(sessionID string, fileID string) (bool, error) {
+func (f *FileGateway) validateFileExists(accountID string, fileID string) (bool, error) {
 	query := fmt.Sprintf(`
 		SELECT COUNT(*) 
 		FROM %s f 
-		JOIN %s s 
-			ON s.%s = f.%s 
-		WHERE s.%s = ? AND f.%s = ?
+		JOIN %s u
+			ON u.%s = f.%s 
+		WHERE u.%s = ? AND f.%s = ? AND f.%s = ?
 		`,
-		fmt.Sprintf("%s", file.TableName),
-		fmt.Sprintf("%s", session.TableName),
-		session.ColumnAccountID,
+		file.TableName,
+		user.TableName,
+		user.ColumnAccountID,
 		file.ColumnFileOwnerID,
-		session.ColumnSessionID,
+		user.ColumnAccountID,
 		file.ColumnFileID,
+		file.ColumnFileType,
 	)
 
-	rows, err := f.database.Query(query, sessionID, fileID)
+	rows, err := f.database.Query(query, accountID, fileID, file.FileTypeDir)
 	if err != nil {
-		return false, fmt.Errorf("failed to execute database query: %v | query: %s", err, query)
+		f.deps.Log.Criticalf("Failed to execute database query: %v | query: %s", err, query)
+		return false, SqlErr
 	}
 
 	type Counter struct{ Count int }
 	var counter Counter
 	err = SelectRow(rows, &counter)
 	if err != nil {
-		return false, fmt.Errorf("failed to retrieve rows with query: %v", err)
+		f.deps.Log.Criticalf("Failed to retrieve rows with query: %v", err)
+		return false, SqlErr
 	}
 	f.deps.Log.Debugf("Rows found: %v", counter)
 
