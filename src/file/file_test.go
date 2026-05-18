@@ -65,7 +65,7 @@ func TestReadParentIdFolders(t *testing.T) {
 			assert.True(t, ok)
 
 			// checks if the flat parent file is a directory
-			assert.Equal(t, idParentFile.Type, "directory")
+			assert.Equal(t, idParentFile.Type, FileTypeDir)
 			// checks if the flat parent path is not root
 			assert.NotEqual(t, idParentFile.Path, dir)
 			// checks if the flat parent path is the same as the parentMap key
