@@ -89,6 +89,9 @@ func TestMultipleSelectRows(t *testing.T) {
 	assert.Nil(t, err)
 
 	fileIDs := []any{}
+	t.Cleanup(func() {
+		DropRows(fdb.database, file.TableName, file.ColumnFileID, fileIDs...)
+	})
 
 	files, err := file.Read(root)
 	assert.Nil(t, err)
@@ -123,9 +126,6 @@ func TestMultipleSelectRows(t *testing.T) {
 	query = query + " " + cbQ
 
 	rows, err := fdb.database.Query(query, args...)
-	assert.Nil(t, err)
-
-	_, err = DropRows(fdb.database, file.TableName, file.ColumnFileID, fileIDs...)
 	assert.Nil(t, err)
 
 	data := []MultipleFileColumns{}
