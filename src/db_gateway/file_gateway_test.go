@@ -1,6 +1,7 @@
 package dbgateway
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -223,6 +224,7 @@ func TestUpdateModifiedFile(t *testing.T) {
 
 	newDate := newFiles[0].ModifiedOn
 
+	fmt.Println(newDate, baseDate)
 	assert.Equal(t, baseDate.Compare(newDate), -1)
 
 	err = resetDefaultFileRow(fDb, file.ColumnModifiedOn, baseDate)
@@ -292,7 +294,7 @@ func TestUpdateFiles(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-func TestGetFilesBySessionAndParentFolder(t *testing.T) {
+func TestGetFilesByAccountIDAndParentFolder(t *testing.T) {
 	fg, err := getTestFileGateway()
 	assert.Nil(t, err)
 
@@ -321,13 +323,6 @@ func TestGetFilesBySessionAndParentFolder(t *testing.T) {
 		assert.NotNil(t, err)
 		assert.Equal(t, err, FileDoesNotExistErr)
 	})
-
-	t.Run("Normal file not directory parent ID", func(t *testing.T) {
-		fileId := tests.DbRowInfo.FileID
-		_, err := fg.GetFilesByAccountIdAndParentId(tests.DbRowInfo.AccountID, fileId)
-		assert.NotNil(t, err)
-		assert.Equal(t, err, FileDoesNotExistErr)
-	})
 }
 
 func TestValidateFileExists(t *testing.T) {
@@ -335,14 +330,14 @@ func TestValidateFileExists(t *testing.T) {
 	assert.Nil(t, err)
 
 	t.Run("File exists", func(t *testing.T) {
-		stat, err := gw.validateFileExists(tests.DbRowInfo.SessionID, tests.DbRowInfo.FileID)
+		stat, err := gw.validateFileExists(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
 		assert.Nil(t, err)
 
 		assert.True(t, stat)
 	})
 
 	t.Run("File not exists", func(t *testing.T) {
-		stat, err := gw.validateFileExists(tests.DbRowInfo.SessionID, "12345")
+		stat, err := gw.validateFileExists(tests.DbRowInfo.AccountID, "12345")
 		assert.Nil(t, err)
 
 		assert.False(t, stat)

@@ -12,14 +12,15 @@ import (
 	"github.com/bobllor/cloud-project/src/tests"
 )
 
-func TestGetFilesBySessionAndParent(t *testing.T) {
+func TestGetFilesByAccountAndParent(t *testing.T) {
 	mux := http.NewServeMux()
 	gw, _ := getGatewayDb(t)
+	ap := NewApiHandler(gw, tests.NewTestLogger())
 
 	fh := NewFileHandler(gw, tests.NewTestLogger())
 
-	mux.HandleFunc(FileGetFileRootRoute, fh.GetFiles)
-	mux.HandleFunc(FileGetFileParentRoute, fh.GetFiles)
+	mux.Handle(FileGetFileRootRoute, ap.CreateAuthMiddleware(fh.GetFiles))
+	mux.Handle(FileGetFileParentRoute, ap.CreateAuthMiddleware(fh.GetFiles))
 	tsv := httptest.NewServer(mux)
 	defer tsv.Close()
 
