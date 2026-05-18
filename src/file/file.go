@@ -24,6 +24,64 @@ const (
 	ColumnDeletedOn   string = "DeletedOn"
 )
 
+type FileType string
+
+const (
+	FileTypeDir  FileType = "dir"
+	FileTypeFile FileType = "file"
+)
+
+type File struct {
+	// OwnerID is the ID of the owner of the file.
+	OwnerID string `json:"accountID"`
+
+	// Name is the name of the file. This includes the extension
+	// of the file.
+	Name string `json:"fileName"`
+
+	// Type is the file type. This is either a "directory" or
+	// a "file".
+	Type FileType `json:"fileType"`
+
+	// FileID is a unique ID assigned to the file.
+	FileID string `json:"fileID"`
+
+	// ParentID is the parent's unique ID that the file resides in.
+	// This can be nil, meaning it resides in the root folder.
+	ParentID *string `json:"parentID"`
+
+	// Path is the absolute path to the file on the disk. This is intended
+	// for the backend use only and should not be sent to the frontend.
+	Path string
+
+	// Size is the size of the file.
+	Size int64 `json:"fileSize"`
+
+	// ModifiedOn is the most recent time the file has been modified. This
+	// will be the most recent time of change or when it was first created.
+	// This must be in UTC.
+	ModifiedOn time.Time `json:"modifedOn"`
+
+	// DeletedOn is the time when the file is set to be deleted. The acutal
+	// deletion occurs after a certain amount of time has passed
+	// since the marked deletion time. This value can be nil.
+	// This must be in UTC.
+	DeletedOn *time.Time `json:"deletedOn"`
+}
+
+// FileResponse is the struct representing a File object
+// from the backend. It is the same struct as File, excluding
+// the field FilePath.
+type FileResponse struct {
+	Name       string     `json:"fileName"`
+	Type       string     `json:"fileType"`
+	FileID     string     `json:"fileID"`
+	ParentID   *string    `json:"parentID"`
+	Size       int64      `json:"fileSize"`
+	ModifiedOn time.Time  `json:"modifedOn"`
+	DeletedOn  *time.Time `json:"deletedOn"`
+}
+
 // Read returns a File slice for all files found in root.
 // An error will be returned if there is an issue while reading root.
 //
@@ -64,12 +122,12 @@ func walk(root string) ([]File, error) {
 
 		// skipping root
 		if p != root {
-			fileType := "file"
+			fileType := FileTypeFile
 
 			var parentID *string
 			parent := filepath.Dir(p)
 			if info.IsDir() {
-				fileType = "directory"
+				fileType = FileTypeDir
 				_, ok := folderIDMap[p]
 				if !ok {
 					folderIDMap[p] = &id
@@ -128,55 +186,4 @@ func FlattenFile(files ...File) []any {
 	}
 
 	return out
-}
-
-type File struct {
-	// OwnerID is the ID of the owner of the file.
-	OwnerID string `json:"accountID"`
-
-	// Name is the name of the file. This includes the extension
-	// of the file.
-	Name string `json:"fileName"`
-
-	// Type is the file type. This is either a "directory" or
-	// a "file".
-	Type string `json:"fileType"`
-
-	// FileID is a unique ID assigned to the file.
-	FileID string `json:"fileID"`
-
-	// ParentID is the parent's unique ID that the file resides in.
-	// This can be nil, meaning it resides in the root folder.
-	ParentID *string `json:"parentID"`
-
-	// Path is the absolute path to the file on the disk. This is intended
-	// for the backend use only.
-	Path string `json:"filePath"`
-
-	// Size is the size of the file.
-	Size int64 `json:"fileSize"`
-
-	// ModifiedOn is the most recent time the file has been modified. This
-	// will be the most recent time of change or when it was first created.
-	// This must be in UTC.
-	ModifiedOn time.Time `json:"modifedOn"`
-
-	// DeletedOn is the time when the file is set to be deleted. The acutal
-	// deletion occurs after a certain amount of time has passed
-	// since the marked deletion time. This value can be nil.
-	// This must be in UTC.
-	DeletedOn *time.Time `json:"deletedOn"`
-}
-
-// FileResponse is the struct representing a File object
-// from the backend. It is the same struct as File, excluding
-// the field FilePath.
-type FileResponse struct {
-	Name       string     `json:"fileName"`
-	Type       string     `json:"fileType"`
-	FileID     string     `json:"fileID"`
-	ParentID   *string    `json:"parentID"`
-	Size       int64      `json:"fileSize"`
-	ModifiedOn time.Time  `json:"modifedOn"`
-	DeletedOn  *time.Time `json:"deletedOn"`
 }
