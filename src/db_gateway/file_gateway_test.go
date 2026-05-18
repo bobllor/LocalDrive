@@ -48,6 +48,33 @@ func TestGetFile(t *testing.T) {
 	assert.Equal(t, len(qFiles), 1)
 }
 
+func TestGetSingleFile(t *testing.T) {
+	fg, err := getTestFileGateway()
+	assert.Nil(t, err)
+
+	t.Run("Normal use", func(t *testing.T) {
+		f, err := fg.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
+		assert.Nil(t, err)
+
+		assert.NotNil(t, f)
+		assert.Equal(t, f.Name, tests.DbRowInfo.FileName)
+	})
+
+	t.Run("Empty file", func(t *testing.T) {
+		f, err := fg.GetFile(tests.DbRowInfo.AccountID, "1234five.txt")
+		assert.Nil(t, err)
+
+		assert.Nil(t, f)
+	})
+
+	t.Run("Bad account ID", func(t *testing.T) {
+		f, err := fg.GetFile("nonexistentid", tests.DbRowInfo.FileID)
+		assert.Nil(t, err)
+
+		assert.Nil(t, f)
+	})
+}
+
 func TestAddFile(t *testing.T) {
 	dir := t.TempDir()
 
@@ -270,7 +297,7 @@ func TestGetFilesBySessionAndParentFolder(t *testing.T) {
 	assert.Nil(t, err)
 
 	t.Run("Root folder", func(t *testing.T) {
-		files, err := fg.GetFilesBySessionAndParentFolder(tests.DbRowInfo.SessionID, "")
+		files, err := fg.GetFilesByAccountIdAndParentId(tests.DbRowInfo.AccountID, "")
 		assert.Nil(t, err)
 
 		assert.Equal(t, len(files), 2)
@@ -280,7 +307,7 @@ func TestGetFilesBySessionAndParentFolder(t *testing.T) {
 		// not located in tests.DbRowInfo, obtained from the test SQL script
 		parent := "randomfolderidhere"
 		baseName := "test2.txt"
-		files, err := fg.GetFilesBySessionAndParentFolder(tests.DbRowInfo.SessionID, parent)
+		files, err := fg.GetFilesByAccountIdAndParentId(tests.DbRowInfo.AccountID, parent)
 		assert.Nil(t, err)
 
 		assert.Equal(t, len(files), 1)
@@ -290,7 +317,14 @@ func TestGetFilesBySessionAndParentFolder(t *testing.T) {
 	t.Run("Invalid folder", func(t *testing.T) {
 		parent := "doesnotexist"
 
-		_, err := fg.GetFilesBySessionAndParentFolder(tests.DbRowInfo.SessionID, parent)
+		_, err := fg.GetFilesByAccountIdAndParentId(tests.DbRowInfo.AccountID, parent)
+		assert.NotNil(t, err)
+		assert.Equal(t, err, FileDoesNotExistErr)
+	})
+
+	t.Run("Normal file not directory parent ID", func(t *testing.T) {
+		fileId := tests.DbRowInfo.FileID
+		_, err := fg.GetFilesByAccountIdAndParentId(tests.DbRowInfo.AccountID, fileId)
 		assert.NotNil(t, err)
 		assert.Equal(t, err, FileDoesNotExistErr)
 	})
@@ -313,6 +347,28 @@ func TestValidateFileExists(t *testing.T) {
 
 		assert.False(t, stat)
 	})
+}
+
+func TestRenameFileName(t *testing.T) {
+	fg, err := getTestFileGateway()
+	assert.Nil(t, err)
+	newFileName := "testfile"
+
+	t.Cleanup(func() {
+		UpdateRow(
+			fg.database,
+			file.TableName,
+			file.ColumnFileID,
+			tests.DbRowInfo.FileID,
+			ClauseData{
+				Columns: []string{file.ColumnFileName},
+				Args:    []any{tests.DbRowInfo.FileName},
+			},
+		)
+	})
+
+	err = fg.RenameFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID, newFileName)
+	assert.Nil(t, err)
 }
 
 // getFileDb gets the [FileGateway] for the test database.
