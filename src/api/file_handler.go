@@ -29,26 +29,36 @@ func NewFileHandler(gw *dbgateway.Gateway, logger *gologger.Logger) *FileHandler
 	}
 }
 
-// GetFiles retrieves a slice of Files based on the session ID and the given
+// GetFiles retrieves a slice of Files based on the account ID and the given
 // parent folder ID.
 //
 // If a parent folder ID is given, it will retrieve those parent folder files.
 // If parent folder is nil, then it will retrieve the files with a nil parent or the
 // root children.
 //
-// This requires the auth middleware session ID.
+// This requires the auth middleware wrapper due to the context.
 func (fh *FileHandler) GetFiles(w http.ResponseWriter, r *http.Request) {
 	parentID := r.PathValue(PARENT_ID_KEY)
 	fh.deps.Log.Debugf("Request query: %v", parentID)
 
-	sesID := GetSessionFromCookie(r)
-	if sesID == "" {
-		fh.deps.Log.Info("No cookie found with request")
+	userContext, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
+	if !ok {
+		fh.deps.Log.Critical("User context is not of type *dbgateway.UserSessionInfo")
+		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
+		return
+	}
+	if userContext == nil {
+		requestContext, ok := GetRequestContext[string](r, CONTEXT_REQUEST_ID_KEY)
+		if !ok {
+			fh.deps.Log.Warn("Request ID is missing from middleware context")
+			requestContext = ""
+		}
+		fh.deps.Log.Infof("Unauthorized access | Request ID: %s", requestContext)
 		WriteErrorResponse(w, ErrorUnauthorizedMsg, http.StatusBadRequest, ReasonBadRequestData)
 		return
 	}
 
-	files, err := fh.gateway.File.GetFilesBySessionAndParentFolder(sesID, parentID)
+	files, err := fh.gateway.File.GetFilesByAccountIdAndParentId(userContext.AccountId, parentID)
 	if err == dbgateway.FileDoesNotExistErr {
 		fh.deps.Log.Infof("Given file ID %s does not exist: %v", parentID, err)
 		WriteErrorResponse(w, "Invalid file ID", http.StatusBadRequest, ReasonBadRequestData)
