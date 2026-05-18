@@ -262,7 +262,7 @@ func (f *FileGateway) UpdateModifiedFiles(fileOwnerID string, fileIDs []string) 
 
 	query := fmt.Sprintf("UPDATE %s SET %s = ?", file.TableName, file.ColumnModifiedOn) + " " + qCon
 
-	finalArgs := []any{time.Now().Format(time.DateTime)}
+	finalArgs := []any{time.Now().UTC()}
 	finalArgs = append(finalArgs, args...)
 
 	res, err := execQuery(f.database, query, finalArgs...)
@@ -408,7 +408,7 @@ func (f *FileGateway) validateFileExists(accountID string, fileID string) (bool,
 		FROM %s f 
 		JOIN %s u
 			ON u.%s = f.%s 
-		WHERE u.%s = ? AND f.%s = ? AND f.%s = ?
+		WHERE u.%s = ? AND f.%s = ?
 		`,
 		file.TableName,
 		user.TableName,
@@ -416,10 +416,9 @@ func (f *FileGateway) validateFileExists(accountID string, fileID string) (bool,
 		file.ColumnFileOwnerID,
 		user.ColumnAccountID,
 		file.ColumnFileID,
-		file.ColumnFileType,
 	)
 
-	rows, err := f.database.Query(query, accountID, fileID, file.FileTypeDir)
+	rows, err := f.database.Query(query, accountID, fileID)
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to execute database query: %v | query: %s", err, query)
 		return false, SqlErr
