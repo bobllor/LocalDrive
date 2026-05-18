@@ -7,6 +7,7 @@ import (
 
 	"github.com/bobllor/assert"
 	"github.com/bobllor/cloud-project/src/file"
+	"github.com/bobllor/cloud-project/src/sqlquery"
 	"github.com/bobllor/cloud-project/src/tests"
 	"github.com/bobllor/cloud-project/src/user"
 )
@@ -110,20 +111,9 @@ func TestMultipleSelectRows(t *testing.T) {
 		FileID   string
 	}
 
-	query := fmt.Sprintf(
-		"SELECT %s,%s FROM %s",
-		file.ColumnFileName,
-		file.ColumnFileID,
-		file.TableName,
-	)
-
-	cb := NewClauseBuilder()
-	cb.In(file.ColumnFileID, fileIDs...)
-
-	cbQ, args, err := cb.Build()
+	query, args, err := sqlquery.Select(file.TableName, file.ColumnFileName, file.ColumnFileID).
+		Where().In(file.ColumnFileID, fileIDs...).Build()
 	assert.Nil(t, err)
-
-	query = query + " " + cbQ
 
 	rows, err := fdb.database.Query(query, args...)
 	assert.Nil(t, err)

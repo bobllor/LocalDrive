@@ -317,29 +317,10 @@ func (ug *UserGateway) GetUserBySessionID(sessionID string) (*user.UserAccountNo
 // DeleteUserByID sets an account ID for deletion. This is a soft deletion,
 // it sets the Active column to false for deletion at a later date.
 func (ug *UserGateway) DeleteUserByID(accountID string) error {
-	cb := NewClauseBuilder()
-	cb.Equal(user.ColumnAccountID, accountID)
+	query, args, err := sqlquery.Update(user.TableName, user.ColumnActive).Args(false).
+		Where().Equal(user.ColumnAccountID, accountID).Build()
 
-	cbq, args, err := cb.Build()
-	if err != nil {
-		return err
-	}
-
-	cd := NewClauseData()
-
-	cd.AddColumns(user.ColumnActive)
-	cd.AddArgs(false)
-
-	sq, sargs, err := cd.BuildSetQuery()
-	if err != nil {
-		return err
-	}
-
-	baseQuery := fmt.Sprintf("UPDATE %s %s %s", user.TableName, sq, cbq)
-
-	execArgs := MakeArgs(sargs, args)
-
-	res, err := execQuery(ug.database, baseQuery, execArgs...)
+	res, err := execQuery(ug.database, query, args...)
 	if err != nil {
 		return err
 	}
