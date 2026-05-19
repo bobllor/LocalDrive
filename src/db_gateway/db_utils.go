@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/bobllor/cloud-project/src/sqlquery"
 	"github.com/bobllor/gologger"
 )
 
@@ -105,27 +106,12 @@ func SelectRows(rows *sql.Rows, src interface{}) error {
 }
 
 // UpdateRow updates a single row from a table based on its column value.
-func UpdateRow(db *sql.DB, table string, whereColumn string, whereArg any, clause ClauseData) (sql.Result, error) {
-	cb := NewClauseBuilder()
-	cb.In(whereColumn, whereArg)
+//
+// It uses a WHERE IN condition clause.
+func UpdateRow(db *sql.DB, table string, whereColumn string, whereArg any, setColumns []string, setArgs ...any) (sql.Result, error) {
+	query, args, err := sqlquery.Update(table, setColumns...).Args(setArgs...).Where().In(whereColumn, whereArg).Build()
 
-	clQ, sargs, err := clause.BuildSetQuery()
-	if err != nil {
-		return nil, err
-	}
-
-	baseQ := fmt.Sprintf("UPDATE %s %s", table, clQ)
-
-	cbQ, args, err := cb.Build()
-	if err != nil {
-		return nil, err
-	}
-
-	execArgs := MakeArgs(sargs, args)
-
-	query := baseQ + " " + cbQ
-
-	res, err := execQuery(db, query, execArgs...)
+	res, err := execQuery(db, query, args...)
 	if err != nil {
 		return nil, err
 	}
