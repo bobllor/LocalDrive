@@ -124,7 +124,7 @@ func UpdateRow(db *sql.DB, table string, whereColumn string, whereArg any, setCo
 //
 // column is used to target the column where the row is in the given slice of args.
 func DropRows(db *sql.DB, table string, column string, args ...any) (sql.Result, error) {
-	pargsStr := BuildPlaceholder(len(args), 1)
+	pargsStr := sqlquery.BuildPlaceholder(len(args), 1)
 	query := fmt.Sprintf(`
 		DELETE FROM %s
 		WHERE %s IN %s
@@ -238,4 +238,20 @@ func logResultRows(log *gologger.Logger, res sql.Result) {
 	} else {
 		log.Infof("Affected rows: %d", n)
 	}
+}
+
+// logSqlBuildError logs the build error, query string, and its args and returns a SqlErr.
+//
+// This is only used for the SQL query building.
+func logSqlBuildError(logger *gologger.Logger, err error, query string, args []any) error {
+	logger.Criticalf("Failed to build query: %v | Query: %s | Args length: %d", err, query, len(args))
+	return SqlErr
+}
+
+// logSqlErr logs the query error and the query string and returns a SqlErr.
+//
+// This is only used for executing the query.
+func logQueryError(logger *gologger.Logger, err error, query string) error {
+	logger.Criticalf("Failed to execute query: %v | Query: %s", err, query)
+	return SqlErr
 }
