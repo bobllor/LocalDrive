@@ -16,6 +16,8 @@ var (
 	FileDoesNotExistErr = errors.New("given file ID does not exist")
 	// Any errors related to SQL, such as building or querying.
 	SqlErr = errors.New("an error occurred on the database server")
+	// ServerErr that represents an error on the server.
+	ServerErr = errors.New("an error occured on the server")
 )
 
 // NewFileGateway creates a new FileGateway for database related options.
@@ -103,94 +105,23 @@ func (f *FileGateway) GetFile(fileOwnerId string, fileId string) (*file.FileResp
 	return &fr[0], nil
 }
 
-// GetFiles returns File rows based on the clause and conditions.
-func (f *FileGateway) GetFiles(fileOwnerID string, conditions []WhereCondition) ([]file.File, error) {
-	cb := NewClauseBuilder()
-
-	baseQuery := fmt.Sprintf("SELECT * FROM %s", file.TableName)
-
-	cb.Equal(file.ColumnFileOwnerID, fileOwnerID)
-
-	err := cb.RegisterConditions(conditions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register conditions: %v", err)
-	}
-
-	q, args, err := cb.Build()
-	if err != nil {
-		return nil, fmt.Errorf("failed to build query: %v", err)
-	}
-
-	query := baseQuery + " " + q
-
-	rows, err := f.database.Query(query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query: %v | query: %s", err, query)
-	}
-
-	files, err := f.getFiles(rows)
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan rows: %v", err)
-	}
-
-	return files, nil
-}
-
-// UpdateFileByID updates a single file row by its file ID.
+// UpdateFile updates a single File's column based on its file ID and the file owner.
 //
-// cd is a ClauseData type used to target the columns and values to replace for the row.
-func (f *FileGateway) UpdateFileByID(fileOwnerID string, fileID string, cd ClauseData) error {
-	conditions := []WhereCondition{
-		{
-			Column:             file.ColumnFileID,
-			Args:               []any{fileID},
-			ComparisonOperator: Equal,
-			LogicalOperator:    OperatorAnd,
-		},
+// Upon update, the modified time will also be updated to the time it was called.
+func (f *FileGateway) UpdateFile(fileOwnerID string, fileId, column string, arg any) error {
+	now := time.Now().UTC()
+	query, args, err := sqlquery.Update(file.TableName, file.ColumnModifiedOn, column).Args(now, arg).
+		Where().Equal(file.ColumnFileOwnerID, fileOwnerID).
+		And().Equal(file.ColumnFileID, fileId).Build()
+	if err != nil {
+		f.deps.Log.Criticalf("Failed to build query: %v", err)
+		return SqlErr
 	}
 
-	err := f.UpdateFiles(fileOwnerID, cd, conditions)
+	res, err := execQuery(f.database, query, args...)
 	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// UpdateFiles updates the Files table based ClauseData and conditions.
-//
-// Errors will be returned if one occurs.
-// Certain columns are forbidden from being changed, and will return an error
-// if these are found.
-func (f *FileGateway) UpdateFiles(fileOwnerID string, cd ClauseData, conditions []WhereCondition) error {
-	cb := NewClauseBuilder()
-
-	setQ, sargs, err := cd.BuildSetQuery()
-	if err != nil {
-		return fmt.Errorf("failed to validate ClauseData: %v", err)
-	}
-
-	baseQuery := fmt.Sprintf("UPDATE %s %s", file.TableName, setQ)
-
-	cb.Equal(file.ColumnFileOwnerID, fileOwnerID)
-
-	err = cb.RegisterConditions(conditions)
-	if err != nil {
-		return fmt.Errorf("failed to register conditions: %v", err)
-	}
-
-	whereQ, args, err := cb.Build()
-	if err != nil {
-		return fmt.Errorf("failed to build WHERE clause: %v", err)
-	}
-
-	query := baseQuery + " " + whereQ
-
-	execArgs := MakeArgs(sargs, args)
-
-	res, err := execQuery(f.database, query, execArgs...)
-	if err != nil {
-		return fmt.Errorf("failed to execute query: %v (args: %v) | query: %s", err, execArgs, query)
+		f.deps.Log.Criticalf("Failed to execute query: %v | Query: %s", err, query)
+		return SqlErr
 	}
 
 	logResultRows(f.deps.Log, res)
@@ -207,16 +138,27 @@ func (f *FileGateway) AddFile(files []file.File) error {
 		return fmt.Errorf("no arguments given for AddFile")
 	}
 
-	flatFiles := file.FlattenFile(files...)
-
-	query := fmt.Sprintf("INSERT INTO %s VALUES", file.TableName)
-	paramStr := BuildPlaceholder(f.fileFieldCount, len(files))
-
-	query = query + " " + paramStr
-
-	res, err := execQuery(f.database, query, flatFiles...)
+	query, args, err := sqlquery.InsertInto(
+		file.TableName,
+		file.ColumnFileOwnerID,
+		file.ColumnFileName,
+		file.ColumnFileType,
+		file.ColumnFileID,
+		file.ColumnParentID,
+		file.ColumnFilePath,
+		file.ColumnFileSize,
+		file.ColumnModifiedOn,
+		file.ColumnDeletedOn,
+	).Args(file.FlattenFile(files...)...).Build()
 	if err != nil {
-		return fmt.Errorf("failed to insert into %s: %v | query: %s", file.TableName, err, query)
+		f.deps.Log.Criticalf("Failed to build query: %v", err)
+		return SqlErr
+	}
+
+	res, err := execQuery(f.database, query, args...)
+	if err != nil {
+		f.deps.Log.Criticalf("Failed to insert into %s: %v | Query: %s", file.TableName, err, query)
+		return SqlErr
 	}
 
 	logResultRows(f.deps.Log, res)
@@ -233,41 +175,32 @@ func (f *FileGateway) RenameFile(accountId, fileId, newFileName string) error {
 		Args(newFileName, time.Now().UTC()).Where().Equal(file.ColumnFileID, fileId).
 		And().Equal(file.ColumnFileOwnerID, accountId).Build()
 	if err != nil {
-		f.deps.Log.Criticalf("Failed to build query to update: %v | Query: %s | Args: %d", err, q, len(args))
-		return errors.New("an error occurred on the server")
+		return logSqlBuildError(f.deps.Log, err, q, args)
 	}
 
 	res, err := execQuery(f.database, q, args...)
 	if err != nil {
-		f.deps.Log.Criticalf("Failed to update file name: %v | query: %s", err, q)
-		return fmt.Errorf("failed to update file name: %v", err)
+		return logQueryError(f.deps.Log, err, q)
 	}
+
 	logResultRows(f.deps.Log, res)
 
 	return nil
 }
 
 // UpdateModifiedFiles updates the modified date column to the current time.
-func (f *FileGateway) UpdateModifiedFiles(fileOwnerID string, fileIDs []string) error {
-	cb := NewClauseBuilder()
-
-	convIds := utils.ConvertToAny(fileIDs)
-
-	cb.Equal(file.ColumnFileOwnerID, fileOwnerID).And().In(file.ColumnFileID, convIds...)
-
-	qCon, args, err := cb.Build()
+func (f *FileGateway) UpdateModifiedFiles(fileOwnerID string, fileIDs ...string) error {
+	now := time.Now().UTC()
+	query, args, err := sqlquery.Update(file.TableName, file.ColumnModifiedOn).Args(now).
+		Where().In(file.ColumnFileID, utils.ConvertToAny(fileIDs)...).
+		And().Equal(file.ColumnFileOwnerID, fileOwnerID).Build()
 	if err != nil {
-		return fmt.Errorf("failed to build query: %v", err)
+		return logSqlBuildError(f.deps.Log, err, query, args)
 	}
 
-	query := fmt.Sprintf("UPDATE %s SET %s = ?", file.TableName, file.ColumnModifiedOn) + " " + qCon
-
-	finalArgs := []any{time.Now().UTC()}
-	finalArgs = append(finalArgs, args...)
-
-	res, err := execQuery(f.database, query, finalArgs...)
+	res, err := execQuery(f.database, query, args...)
 	if err != nil {
-		return fmt.Errorf("failed to execute query: %v | query: %s", err, query)
+		return logQueryError(f.deps.Log, err, query)
 	}
 
 	logResultRows(f.deps.Log, res)
@@ -276,36 +209,28 @@ func (f *FileGateway) UpdateModifiedFiles(fileOwnerID string, fileIDs []string) 
 }
 
 // DeleteFile sets a slice of file IDs to be marked for deletion.
-// This does not delete the files immediately.
-func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs []string) error {
-	cb := NewClauseBuilder()
-
+//
+// This does not delete the files immediately but marks the deletion date 15 days from today.
+func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs ...string) error {
 	if len(fileIDs) == 0 {
-		return fmt.Errorf("failed to delete files, got empty file IDs")
+		f.deps.Log.Critical("Failed to delete files, got file IDs length 0")
+		return ServerErr
 	}
 
-	convFileIDs := utils.ConvertToAny(fileIDs)
+	const DAYS_UNTIL_DELETE = 15
 
-	cb.Equal(file.ColumnFileOwnerID, fileOwnerID).And().In(file.ColumnFileID, convFileIDs...)
-
-	qCondition, args, err := cb.Build()
+	deleteTime := time.Now().AddDate(0, 0, DAYS_UNTIL_DELETE).UTC()
+	query, args, err := sqlquery.Update(file.TableName, file.ColumnDeletedOn).Args(deleteTime).
+		Where().Equal(file.ColumnFileOwnerID, fileOwnerID).
+		And().In(file.ColumnFileID, utils.ConvertToAny(fileIDs)...).Build()
 	if err != nil {
-		return fmt.Errorf("failed to build condition query: %v", err)
+		return logSqlBuildError(f.deps.Log, err, query, args)
 	}
 
-	baseQuery := fmt.Sprintf(
-		"UPDATE %s SET %s = ?",
-		file.TableName,
-		file.ColumnDeletedOn,
-	)
-	query := baseQuery + " " + qCondition
-
-	finalArgs := []any{time.Now().Format(time.DateTime)}
-	finalArgs = append(finalArgs, args...)
-
-	res, err := execQuery(f.database, query, finalArgs...)
+	res, err := execQuery(f.database, query, args...)
 	if err != nil {
-		return fmt.Errorf("failed to execute query: %v | query: %s", err, query)
+		f.deps.Log.Criticalf("Failed to execute query: %v | Query: %s", err, query)
+		return SqlErr
 	}
 
 	logResultRows(f.deps.Log, res)
@@ -314,26 +239,17 @@ func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs []string) error {
 }
 
 // RestoreFiles sets a file IDs that are unmark files that were marked for deletion.
-func (f *FileGateway) RestoreFiles(fileOwnerID string, fileIDs []string) error {
-	cb := NewClauseBuilder()
-
-	cb.Equal(file.ColumnFileOwnerID, fileOwnerID)
-
-	convIDs := utils.ConvertToAny(fileIDs)
-
-	cb.And().In(file.ColumnFileID, convIDs...)
-
-	cond, args, err := cb.Build()
+func (f *FileGateway) RestoreFiles(fileOwnerID string, fileIDs ...string) error {
+	query, args, err := sqlquery.Update(file.TableName, file.ColumnDeletedOn).Args(nil).
+		Where().Equal(file.ColumnFileOwnerID, fileOwnerID).
+		And().In(file.ColumnFileID, utils.ConvertToAny(fileIDs)...).Build()
 	if err != nil {
-		return fmt.Errorf("failed to build conditions: %v", err)
+		return logSqlBuildError(f.deps.Log, err, query, args)
 	}
-
-	baseQuery := fmt.Sprintf("UPDATE %s SET %s = NULL", file.TableName, file.ColumnDeletedOn)
-	query := baseQuery + " " + cond
 
 	res, err := execQuery(f.database, query, args...)
 	if err != nil {
-		return fmt.Errorf("failed to execute query: %v | query: %s", err, query)
+		return logQueryError(f.deps.Log, err, query)
 	}
 
 	logResultRows(f.deps.Log, res)
