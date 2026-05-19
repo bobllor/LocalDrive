@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"io"
 	"log"
 	"math/rand"
 	"os"
@@ -61,7 +62,7 @@ var TestSalt = []byte("A7iRBwsrtjiNOhnWeAGgng")
 
 // NewTestLogger creates a new test logger with a silent output.
 func NewTestLogger() *gologger.Logger {
-	printer := log.New(os.Stdout, "", log.Ldate|log.Ltime)
+	printer := log.New(io.Discard, "", log.Ldate|log.Ltime)
 	log := gologger.NewLogger(printer, gologger.Lsilent)
 
 	return log
