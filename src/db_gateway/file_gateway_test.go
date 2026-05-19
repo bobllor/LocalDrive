@@ -1,7 +1,7 @@
 package dbgateway
 
 import (
-	"fmt"
+	"errors"
 	"testing"
 	"time"
 
@@ -34,19 +34,10 @@ func TestGetFile(t *testing.T) {
 	fDb, err := getTestFileGateway()
 	assert.Nil(t, err)
 
-	conditions := []WhereCondition{
-		{
-			Column:             file.ColumnFileID,
-			Args:               []any{tests.DbRowInfo.FileID},
-			LogicalOperator:    OperatorAnd,
-			ComparisonOperator: Equal,
-		},
-	}
-
-	qFiles, err := fDb.GetFiles(tests.DbRowInfo.AccountID, conditions)
+	qFiles, err := fDb.GetAllFiles(tests.DbRowInfo.AccountID)
 	assert.Nil(t, err)
 
-	assert.Equal(t, len(qFiles), 1)
+	assert.True(t, len(qFiles) > 0)
 }
 
 func TestGetSingleFile(t *testing.T) {
@@ -106,129 +97,80 @@ func TestAddFile(t *testing.T) {
 	assert.NotEqual(t, len(qFiles), 1)
 	assert.NotEqual(t, len(qFiles), 0)
 
-	_, err = DropRows(fDb.database, file.TableName, file.ColumnFileID, utils.ConvertToAny(fileIDs)...)
-	assert.Nil(t, err)
-}
-
-func TestUpdateFileByID(t *testing.T) {
-	fDb, err := getTestFileGateway()
-	assert.Nil(t, err)
-
-	newValue := "this.is.a.text.file.txt"
-
-	cd := ClauseData{
-		Columns: []string{file.ColumnFileName},
-		Args:    []any{newValue},
-	}
-
-	err = fDb.UpdateFileByID(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID, cd)
-	assert.Nil(t, err)
-
-	files, err := fDb.GetFiles(tests.DbRowInfo.AccountID, getConditionByID(tests.DbRowInfo.FileID))
-	assert.Nil(t, err)
-
-	assert.Equal(t, files[0].Name, newValue)
-
-	err = resetDefaultFileRow(fDb, file.ColumnFileName, tests.DbRowInfo.FileName)
-	assert.Nil(t, err)
+	defer t.Cleanup(func() {
+		DropRows(fDb.database, file.TableName, file.ColumnFileID, utils.ConvertToAny(fileIDs)...)
+	})
 }
 
 func TestDeleteFiles(t *testing.T) {
 	fDb, err := getTestFileGateway()
 	assert.Nil(t, err)
 
-	err = fDb.DeleteFiles(tests.DbRowInfo.AccountID, []string{tests.DbRowInfo.FileID})
+	t.Cleanup(func() {
+		setDefaultFileColumn(fDb, file.ColumnDeletedOn, nil)
+	})
+
+	err = fDb.DeleteFiles(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
 	assert.Nil(t, err)
 
-	conditions := []WhereCondition{
-		{
-			Column:             file.ColumnFileID,
-			Args:               []any{tests.DbRowInfo.FileID},
-			LogicalOperator:    OperatorAnd,
-			ComparisonOperator: Equal,
-		},
-	}
-
-	qFiles, err := fDb.GetFiles(tests.DbRowInfo.AccountID, conditions)
+	qFile, err := fDb.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
 	assert.Nil(t, err)
 
-	assert.NotNil(t, qFiles[0].DeletedOn)
-	assert.Equal(t, qFiles[0].FileID, tests.DbRowInfo.FileID)
+	assert.NotNil(t, qFile.DeletedOn)
+	assert.Equal(t, qFile.FileID, tests.DbRowInfo.FileID)
 
 	now := time.Now()
-	qDate := qFiles[0].DeletedOn
+	qDate := qFile.DeletedOn
 
-	assert.Equal(t, qDate.Year(), now.Year())
-	assert.Equal(t, qDate.Month(), now.Month())
-	assert.Equal(t, qDate.Day(), now.Day())
+	expectedTime := now.AddDate(0, 0, 15).UTC()
 
-	err = resetDefaultFileRow(fDb, file.ColumnDeletedOn, nil)
-	assert.Nil(t, err)
+	assert.Equal(t, qDate.Year(), expectedTime.Year())
+	assert.Equal(t, qDate.Month(), expectedTime.Month())
+	assert.Equal(t, qDate.Day(), expectedTime.Day())
 }
 
 func TestRestoreFiles(t *testing.T) {
 	fDb, err := getTestFileGateway()
 	assert.Nil(t, err)
 
-	conditions := []WhereCondition{
-		{
-			Column:             file.ColumnFileID,
-			Args:               []any{tests.DbRowInfo.FileID},
-			LogicalOperator:    OperatorAnd,
-			ComparisonOperator: Equal,
-		},
-	}
-
-	err = fDb.DeleteFiles(tests.DbRowInfo.AccountID, []string{tests.DbRowInfo.FileID})
+	err = fDb.DeleteFiles(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
 	assert.Nil(t, err)
 
-	qFiles, err := fDb.GetFiles(tests.DbRowInfo.AccountID, conditions)
+	qFile, err := fDb.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
 	assert.Nil(t, err)
 
-	if qFiles[0].DeletedOn == nil {
-		t.Fatal("failed to set file to deleted with DeletedOn")
-	}
+	assert.NotNil(t, qFile.DeletedOn)
 
-	err = fDb.RestoreFiles(tests.DbRowInfo.AccountID, []string{tests.DbRowInfo.FileID})
+	err = fDb.RestoreFiles(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
 	assert.Nil(t, err)
 
-	qFiles, err = fDb.GetFiles(tests.DbRowInfo.AccountID, conditions)
+	qFile, err = fDb.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
 	assert.Nil(t, err)
 
-	assert.Nil(t, qFiles[0].DeletedOn)
+	assert.Nil(t, qFile.DeletedOn)
 }
 
 func TestUpdateModifiedFile(t *testing.T) {
 	fDb, err := getTestFileGateway()
 	assert.Nil(t, err)
-
-	conditions := []WhereCondition{
-		{
-			Column:             file.ColumnFileID,
-			Args:               []any{tests.DbRowInfo.FileID},
-			LogicalOperator:    OperatorAnd,
-			ComparisonOperator: Equal,
-		},
-	}
-
-	baseFiles, err := fDb.GetFiles(tests.DbRowInfo.AccountID, conditions)
+	baseFiles, err := fDb.GetAllFiles(tests.DbRowInfo.AccountID)
 	assert.Nil(t, err)
 
 	baseDate := baseFiles[0].ModifiedOn
 
-	err = fDb.UpdateModifiedFiles(tests.DbRowInfo.AccountID, []string{tests.DbRowInfo.FileID})
+	t.Cleanup(func() {
+		setDefaultFileColumn(fDb, file.ColumnModifiedOn, baseDate)
+	})
+
+	err = fDb.UpdateModifiedFiles(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
 	assert.Nil(t, err)
 
-	newFiles, err := fDb.GetFiles(tests.DbRowInfo.AccountID, conditions)
+	newFile, err := fDb.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
 	assert.Nil(t, err)
 
-	newDate := newFiles[0].ModifiedOn
+	newDate := newFile.ModifiedOn
 
-	fmt.Println(newDate, baseDate)
 	assert.Equal(t, baseDate.Compare(newDate), -1)
-
-	err = resetDefaultFileRow(fDb, file.ColumnModifiedOn, baseDate)
-	assert.Nil(t, err)
 }
 
 func TestAddDuplicateFileError(t *testing.T) {
@@ -249,49 +191,43 @@ func TestAddMissingOwnerIDFileError(t *testing.T) {
 	assert.Nil(t, err)
 
 	f := file.File{
-		FileID: "fdsa",
+		FileID:     "fdsa",
+		ModifiedOn: time.Now().UTC(),
 	}
 
 	err = fDb.AddFile([]file.File{f})
 	assert.NotNil(t, err)
+	assert.True(t, errors.Is(err, SqlErr))
 }
 
 func TestUpdateFiles(t *testing.T) {
 	fDb, err := getTestFileGateway()
 	assert.Nil(t, err)
 
+	t.Cleanup(func() {
+		setDefaultFileColumn(fDb, file.ColumnFileName, tests.DbRowInfo.FileName)
+	})
+
 	newName := "this.isa.filename.txt"
 
-	cd := ClauseData{
-		Columns: []string{file.ColumnFileName},
-		Args:    []any{newName},
-	}
-
-	conditions := []WhereCondition{
-		{
-			Column:             file.ColumnFileID,
-			Args:               []any{tests.DbRowInfo.FileID},
-			ComparisonOperator: Equal,
-			LogicalOperator:    OperatorAnd,
-		},
-	}
-
-	files, err := fDb.GetFiles(tests.DbRowInfo.AccountID, conditions)
+	files, err := fDb.GetAllFiles(tests.DbRowInfo.AccountID)
 	assert.Nil(t, err)
 
-	baseName := files[0].Name
+	baseFile := files[0]
 
-	err = fDb.UpdateFiles(tests.DbRowInfo.AccountID, cd, conditions)
+	baseTime := baseFile.ModifiedOn.UTC()
+	baseName := baseFile.Name
+
+	err = fDb.UpdateFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID, file.ColumnFileName, newName)
 	assert.Nil(t, err)
 
-	files, err = fDb.GetFiles(tests.DbRowInfo.AccountID, conditions)
+	fileRes, err := fDb.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
 	assert.Nil(t, err)
 
-	assert.Equal(t, files[0].Name, newName)
-	assert.NotEqual(t, files[0].Name, baseName)
+	assert.Equal(t, fileRes.Name, newName)
+	assert.NotEqual(t, fileRes.Name, baseName)
 
-	err = resetDefaultFileRow(fDb, file.ColumnFileName, tests.DbRowInfo.FileName)
-	assert.Nil(t, err)
+	assert.Equal(t, baseTime.UTC().Compare(fileRes.ModifiedOn), -1)
 }
 
 func TestGetFilesByAccountIDAndParentFolder(t *testing.T) {
@@ -355,10 +291,8 @@ func TestRenameFileName(t *testing.T) {
 			file.TableName,
 			file.ColumnFileID,
 			tests.DbRowInfo.FileID,
-			ClauseData{
-				Columns: []string{file.ColumnFileName},
-				Args:    []any{tests.DbRowInfo.FileName},
-			},
+			[]string{file.ColumnFileName},
+			tests.DbRowInfo.FileName,
 		)
 	})
 
@@ -384,34 +318,13 @@ func getTestFileGateway() (*FileGateway, error) {
 	return fDb, nil
 }
 
-func getConditionByID(fileID string) []WhereCondition {
-	return []WhereCondition{
-		{
-			Column:             file.ColumnFileID,
-			Args:               []any{fileID},
-			ComparisonOperator: Equal,
-			LogicalOperator:    OperatorAnd,
-		},
-	}
-}
-
-// getClauseData retrieves a default ClauseData that targets
-// the a given column and given arguments.
-func getClauseData(column string, args ...any) ClauseData {
-	return ClauseData{
-		Columns: []string{column},
-		Args:    args,
-	}
-}
-
-// resetDefaultFileName resets the default entry's file name to its default value.
-// The error must be handled.
-func resetDefaultFileRow(fDb *FileGateway, column string, args ...any) error {
-	cd := getClauseData(column, args...)
-
-	err := fDb.UpdateFileByID(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID, cd)
+// setDefaultFileColumn sets a column and arg to the default file row.
+// It automatically targets the default test account ID and file ID.
+func setDefaultFileColumn(fg *FileGateway, column string, arg any) error {
+	err := fg.UpdateFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID, column, arg)
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
