@@ -119,7 +119,7 @@ func (sg *SessionGateway) UpsertSession(accountID string) (*session.Session, err
 
 	args := ses.ToArgs()
 
-	placeholder := BuildPlaceholder(len(args), 1)
+	placeholder := sqlquery.BuildPlaceholder(len(args), 1)
 
 	duplicateStr := fmt.Sprintf(
 		"ON DUPLICATE KEY UPDATE %s=?,%s=?,%s=?",

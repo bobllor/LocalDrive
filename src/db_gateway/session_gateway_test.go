@@ -66,10 +66,10 @@ func TestUpsertSessionReplace(t *testing.T) {
 		session.TableName,
 		session.ColumnAccountID,
 		tests.DbRowInfo.AccountID,
-		ClauseData{
-			Columns: []string{session.ColumnSessionID, session.ColumnCreatedOn, session.ColumnExpireOn},
-			Args:    []any{baseS.SessionID, baseS.CreatedOn, baseS.ExpireOn},
-		},
+		[]string{session.ColumnSessionID, session.ColumnCreatedOn, session.ColumnExpireOn},
+		baseS.SessionID,
+		baseS.CreatedOn,
+		baseS.ExpireOn,
 	)
 	assert.Nil(t, err)
 
@@ -139,10 +139,8 @@ func TestValidateSession(t *testing.T) {
 			session.TableName,
 			session.ColumnAccountID,
 			acc.AccountID,
-			ClauseData{
-				Columns: []string{session.ColumnExpireOn},
-				Args:    []any{baseSess.ExpireOn.AddDate(0, 0, -ExpireTimeDays-1).UTC()},
-			},
+			[]string{session.ColumnExpireOn},
+			baseSess.ExpireOn.AddDate(0, 0, -ExpireTimeDays-1).UTC(),
 		)
 		assert.Nil(t, err)
 
