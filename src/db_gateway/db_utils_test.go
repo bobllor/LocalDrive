@@ -90,18 +90,23 @@ func TestMultipleSelectRows(t *testing.T) {
 	assert.Nil(t, err)
 
 	fileIDs := []any{}
-	t.Cleanup(func() {
-		DropRows(fdb.database, file.TableName, file.ColumnFileID, fileIDs...)
-	})
 
 	files, err := file.Read(root)
 	assert.Nil(t, err)
 
+	ug := newTestUserGateway(t)
+	usr, err := ug.AddUser("username123", "password12345")
+	assert.Nil(t, err)
+
 	for i, file := range files {
-		files[i].OwnerID = tests.DbRowInfo.AccountID
+		files[i].OwnerID = usr.AccountID
 
 		fileIDs = append(fileIDs, file.FileID)
 	}
+
+	defer t.Cleanup(func() {
+		DropRows(fdb.database, user.TableName, user.ColumnAccountID, usr.AccountID)
+	})
 
 	err = fdb.AddFile(files)
 	assert.Nil(t, err)
