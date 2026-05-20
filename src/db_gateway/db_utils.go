@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/bobllor/cloud-project/src/sqlquery"
 	"github.com/bobllor/gologger"
 )
 
@@ -105,27 +106,12 @@ func SelectRows(rows *sql.Rows, src interface{}) error {
 }
 
 // UpdateRow updates a single row from a table based on its column value.
-func UpdateRow(db *sql.DB, table string, whereColumn string, whereArg any, clause ClauseData) (sql.Result, error) {
-	cb := NewClauseBuilder()
-	cb.In(whereColumn, whereArg)
+//
+// It uses a WHERE IN condition clause.
+func UpdateRow(db *sql.DB, table string, whereColumn string, whereArg any, setColumns []string, setArgs ...any) (sql.Result, error) {
+	query, args, err := sqlquery.Update(table, setColumns...).Args(setArgs...).Where().In(whereColumn, whereArg).Build()
 
-	clQ, sargs, err := clause.BuildSetQuery()
-	if err != nil {
-		return nil, err
-	}
-
-	baseQ := fmt.Sprintf("UPDATE %s %s", table, clQ)
-
-	cbQ, args, err := cb.Build()
-	if err != nil {
-		return nil, err
-	}
-
-	execArgs := MakeArgs(sargs, args)
-
-	query := baseQ + " " + cbQ
-
-	res, err := execQuery(db, query, execArgs...)
+	res, err := execQuery(db, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -138,18 +124,17 @@ func UpdateRow(db *sql.DB, table string, whereColumn string, whereArg any, claus
 //
 // column is used to target the column where the row is in the given slice of args.
 func DropRows(db *sql.DB, table string, column string, args ...any) (sql.Result, error) {
-	cb := NewClauseBuilder()
+	pargsStr := sqlquery.BuildPlaceholder(len(args), 1)
+	query := fmt.Sprintf(`
+		DELETE FROM %s
+		WHERE %s IN %s
+		`,
+		table,
+		column,
+		pargsStr,
+	)
 
-	cb.In(column, args...)
-
-	cbQ, newArgs, err := cb.Build()
-	if err != nil {
-		return nil, err
-	}
-
-	query := fmt.Sprintf("DELETE FROM %s", table) + " " + cbQ
-
-	res, err := execQuery(db, query, newArgs...)
+	res, err := execQuery(db, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -253,4 +238,20 @@ func logResultRows(log *gologger.Logger, res sql.Result) {
 	} else {
 		log.Infof("Affected rows: %d", n)
 	}
+}
+
+// logSqlBuildError logs the build error, query string, and its args and returns a SqlErr.
+//
+// This is only used for the SQL query building.
+func logSqlBuildError(logger *gologger.Logger, err error, query string, args []any) error {
+	logger.Criticalf("Failed to build query: %v | Query: %s | Args length: %d", err, query, len(args))
+	return SqlErr
+}
+
+// logSqlErr logs the query error and the query string and returns a SqlErr.
+//
+// This is only used for executing the query.
+func logQueryError(logger *gologger.Logger, err error, query string) error {
+	logger.Criticalf("Failed to execute query: %v | Query: %s", err, query)
+	return SqlErr
 }

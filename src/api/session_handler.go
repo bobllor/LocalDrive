@@ -30,7 +30,7 @@ func NewSessionHandler(gw *dbgateway.Gateway, logger *gologger.Logger) *SessionH
 func (sh *SessionHandler) GetValidateSession(w http.ResponseWriter, r *http.Request) {
 	sesID := GetSessionFromCookie(r)
 
-	status, err := sh.gateway.Session.ValidateSession(sesID)
+	status, _, err := sh.gateway.Session.ValidateSessionAndGetUser(sesID)
 	if err != nil {
 		sh.deps.Log.Criticalf("Error with validating session: %v", err)
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)

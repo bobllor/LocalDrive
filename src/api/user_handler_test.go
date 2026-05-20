@@ -129,10 +129,8 @@ func TestLoginUser(t *testing.T) {
 				session.TableName,
 				session.ColumnAccountID,
 				tests.DbRowInfo.AccountID,
-				dbcon.ClauseData{
-					Columns: []string{session.ColumnSessionID},
-					Args:    []any{tests.DbRowInfo.SessionID},
-				},
+				[]string{session.ColumnSessionID},
+				tests.DbRowInfo.SessionID,
 			)
 			assert.Nil(t, err)
 		})

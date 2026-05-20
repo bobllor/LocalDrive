@@ -8,6 +8,7 @@ import (
 
 	"github.com/bobllor/cloud-project/src/session"
 	"github.com/bobllor/cloud-project/src/sqlquery"
+	"github.com/bobllor/cloud-project/src/user"
 	"github.com/bobllor/cloud-project/src/utils"
 	"github.com/google/uuid"
 )
@@ -30,6 +31,13 @@ type SessionGateway struct {
 	database          *sql.DB
 	sessionFieldCount int
 	deps              *utils.Deps
+}
+
+type UserSessionInfo struct {
+	SessionId string
+	ExpireOn  time.Time
+	Username  string
+	AccountId string
 }
 
 // GetSessionByAccountID retrieves the session of the account ID. If a session is not found,
@@ -111,7 +119,7 @@ func (sg *SessionGateway) UpsertSession(accountID string) (*session.Session, err
 
 	args := ses.ToArgs()
 
-	placeholder := BuildPlaceholder(len(args), 1)
+	placeholder := sqlquery.BuildPlaceholder(len(args), 1)
 
 	duplicateStr := fmt.Sprintf(
 		"ON DUPLICATE KEY UPDATE %s=?,%s=?,%s=?",
@@ -136,12 +144,14 @@ func (sg *SessionGateway) UpsertSession(accountID string) (*session.Session, err
 	return &ses, nil
 }
 
-// ValidateSession validates a session with the user's session ID.
-// If the sessionID is invalid, it does not exist, it does not match the stored database
+// ValidateSessionAndGetUser validates a session with the user's session ID and returns
+// if the session is valid and a UserSessionInfo struct.
+//
+// If the session ID is invalid, it does not exist, it does not match the stored database
 // version, or if it is expired, then it will return false.
 //
-// Any errors will be returned during the database query.
-func (sg *SessionGateway) ValidateSession(sessionID string) (bool, error) {
+// Any errors will be returned during database queries or parsing.
+func (sg *SessionGateway) ValidateSessionAndGetUser(sessionID string) (bool, *UserSessionInfo, error) {
 	// false conditions:
 	//	- any DB errors (error must be handled)
 	//	- sessionID are empty strings or invalid formatting
@@ -150,27 +160,47 @@ func (sg *SessionGateway) ValidateSession(sessionID string) (bool, error) {
 	//	- session row is not found with account ID
 
 	if !sg.validateID(sessionID) {
-		return false, nil
+		return false, nil, nil
 	}
 
 	// TODO: add cache access here, probably redis or if you are lazy a hash map
 
-	ses, err := sg.GetSessionBySessionID(sessionID)
+	query := fmt.Sprintf(`
+		SELECT s.%s, s.%s, u.%s, u.%s
+		FROM %s s
+		JOIN %s u
+			ON u.%s = s.%s
+		WHERE s.%s = ?
+		LIMIT 1`,
+		session.ColumnSessionID, session.ColumnExpireOn,
+		user.ColumnUsername, user.ColumnAccountID,
+		session.TableName, user.TableName,
+		user.ColumnAccountID, session.ColumnAccountID,
+		session.ColumnSessionID,
+	)
+
+	rows, err := sg.database.Query(query, sessionID)
 	if err != nil {
-		return false, err
-	}
-	if ses == nil {
-		return false, nil
+		return false, nil, SqlErr
 	}
 
-	if ses.SessionID != sessionID {
-		return false, nil
+	var userSesInfo []UserSessionInfo
+	err = SelectRows(rows, &userSesInfo)
+	if err != nil {
+		return false, nil, SqlErr
+	}
+	if len(userSesInfo) == 0 {
+		return false, nil, nil
+	}
+	ses := userSesInfo[0]
+	if ses.SessionId != sessionID {
+		return false, nil, nil
 	}
 	if ses.ExpireOn.UTC().Before(time.Now().UTC()) {
-		return false, nil
+		return false, nil, nil
 	}
 
-	return true, nil
+	return true, &ses, nil
 }
 
 // DeleteSessionByID deletes the given session ID from the table.

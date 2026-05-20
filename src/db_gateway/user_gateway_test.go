@@ -113,10 +113,8 @@ func TestDeleteUser(t *testing.T) {
 		user.TableName,
 		user.ColumnAccountID,
 		tests.DbRowInfo.AccountID,
-		ClauseData{
-			Columns: []string{user.ColumnActive},
-			Args:    []any{true},
-		},
+		[]string{user.ColumnActive},
+		true,
 	)
 
 	assert.Equal(t, uInfo.Active, false)

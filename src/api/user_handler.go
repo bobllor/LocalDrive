@@ -92,7 +92,7 @@ func (uh *UserHandler) PostLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		uh.deps.Log.Infof("Cookie key %s not found", CookieSessionKey)
 	} else {
-		validSession, err := uh.Gateway.Session.ValidateSession(c.Value)
+		validSession, _, err := uh.Gateway.Session.ValidateSessionAndGetUser(c.Value)
 		if err != nil {
 			uh.deps.Log.Warnf("Got an error while validating session: %v", err)
 		}

@@ -33,14 +33,14 @@ type SqlInsert struct {
 // and any column arguments.
 //
 // It will return a SqlArgs for inserting arguments for each column.
-func InsertInto(tableName string, columns ...string) *SqlArgs {
+func InsertInto(tableName string, columns ...string) *SqlArgs[*SqlInsert] {
 	s := &SqlInsert{
 		TableName:    tableName,
 		columns:      columns,
 		queryBuilder: &QueryBuilder{},
 	}
 
-	sargs := &SqlArgs{
+	sargs := &SqlArgs[*SqlInsert]{
 		builder: s,
 	}
 
@@ -55,13 +55,13 @@ func (s *SqlInsert) Write(args ...any) {
 // Build creates the query for the INSERT statement.
 // If no arguments were given into
 func (s *SqlInsert) Build() (string, []any, error) {
-	if len(s.args)%len(s.columns) != 0 {
-		return "", nil, InsertInvalidArgCountErr
-	}
 	if len(s.columns) == 0 {
 		return "", nil, InsertZeroColumnsErr
 	}
 
+	if len(s.args)%len(s.columns) != 0 {
+		return "", nil, InsertInvalidArgCountErr
+	}
 	query, err := s.queryBuilder.Build(s.buildQuery())
 
 	return query, s.args, err

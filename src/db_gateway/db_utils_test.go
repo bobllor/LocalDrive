@@ -7,6 +7,7 @@ import (
 
 	"github.com/bobllor/assert"
 	"github.com/bobllor/cloud-project/src/file"
+	"github.com/bobllor/cloud-project/src/sqlquery"
 	"github.com/bobllor/cloud-project/src/tests"
 	"github.com/bobllor/cloud-project/src/user"
 )
@@ -93,11 +94,19 @@ func TestMultipleSelectRows(t *testing.T) {
 	files, err := file.Read(root)
 	assert.Nil(t, err)
 
+	ug := newTestUserGateway(t)
+	usr, err := ug.AddUser("username123", "password12345")
+	assert.Nil(t, err)
+
 	for i, file := range files {
-		files[i].OwnerID = tests.DbRowInfo.AccountID
+		files[i].OwnerID = usr.AccountID
 
 		fileIDs = append(fileIDs, file.FileID)
 	}
+
+	defer t.Cleanup(func() {
+		DropRows(fdb.database, user.TableName, user.ColumnAccountID, usr.AccountID)
+	})
 
 	err = fdb.AddFile(files)
 	assert.Nil(t, err)
@@ -107,25 +116,11 @@ func TestMultipleSelectRows(t *testing.T) {
 		FileID   string
 	}
 
-	query := fmt.Sprintf(
-		"SELECT %s,%s FROM %s",
-		file.ColumnFileName,
-		file.ColumnFileID,
-		file.TableName,
-	)
-
-	cb := NewClauseBuilder()
-	cb.In(file.ColumnFileID, fileIDs...)
-
-	cbQ, args, err := cb.Build()
+	query, args, err := sqlquery.Select(file.TableName, file.ColumnFileName, file.ColumnFileID).
+		Where().In(file.ColumnFileID, fileIDs...).Build()
 	assert.Nil(t, err)
-
-	query = query + " " + cbQ
 
 	rows, err := fdb.database.Query(query, args...)
-	assert.Nil(t, err)
-
-	_, err = DropRows(fdb.database, file.TableName, file.ColumnFileID, fileIDs...)
 	assert.Nil(t, err)
 
 	data := []MultipleFileColumns{}

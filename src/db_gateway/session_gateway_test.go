@@ -66,10 +66,10 @@ func TestUpsertSessionReplace(t *testing.T) {
 		session.TableName,
 		session.ColumnAccountID,
 		tests.DbRowInfo.AccountID,
-		ClauseData{
-			Columns: []string{session.ColumnSessionID, session.ColumnCreatedOn, session.ColumnExpireOn},
-			Args:    []any{baseS.SessionID, baseS.CreatedOn, baseS.ExpireOn},
-		},
+		[]string{session.ColumnSessionID, session.ColumnCreatedOn, session.ColumnExpireOn},
+		baseS.SessionID,
+		baseS.CreatedOn,
+		baseS.ExpireOn,
 	)
 	assert.Nil(t, err)
 
@@ -103,17 +103,20 @@ func TestValidateSession(t *testing.T) {
 	sg := newTestSessionGateway(t)
 
 	t.Run("Valid ID", func(t *testing.T) {
-		status, err := sg.ValidateSession(tests.DbRowInfo.SessionID)
+		status, ses, err := sg.ValidateSessionAndGetUser(tests.DbRowInfo.SessionID)
 		assert.Nil(t, err)
+		assert.NotNil(t, ses)
 		assert.True(t, status)
+		assert.Equal(t, ses.AccountId, tests.DbRowInfo.AccountID)
 	})
 
 	t.Run("Invalid session IDs", func(t *testing.T) {
 		ids := []string{"", "nonexistentid"}
 
 		for _, id := range ids {
-			status, err := sg.ValidateSession(id)
+			status, ses, err := sg.ValidateSessionAndGetUser(id)
 			assert.Nil(t, err)
+			assert.Nil(t, ses)
 			assert.False(t, status)
 		}
 	})
@@ -136,15 +139,14 @@ func TestValidateSession(t *testing.T) {
 			session.TableName,
 			session.ColumnAccountID,
 			acc.AccountID,
-			ClauseData{
-				Columns: []string{session.ColumnExpireOn},
-				Args:    []any{baseSess.ExpireOn.AddDate(0, 0, -ExpireTimeDays-1).UTC()},
-			},
+			[]string{session.ColumnExpireOn},
+			baseSess.ExpireOn.AddDate(0, 0, -ExpireTimeDays-1).UTC(),
 		)
 		assert.Nil(t, err)
 
-		stat, err := sg.ValidateSession(baseSess.SessionID)
+		stat, ses, err := sg.ValidateSessionAndGetUser(baseSess.SessionID)
 		assert.Nil(t, err)
+		assert.Nil(t, ses)
 		assert.False(t, stat)
 	})
 }

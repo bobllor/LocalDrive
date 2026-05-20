@@ -1,6 +1,8 @@
 package sqlquery
 
-import "strings"
+import (
+	"strings"
+)
 
 type DMLType string
 
@@ -44,8 +46,8 @@ type Builder interface {
 }
 
 // SqlArgs is adds arguments to the builder after the columns are added.
-type SqlArgs struct {
-	builder Builder
+type SqlArgs[T Builder] struct {
+	builder T
 }
 
 // QueryBuilder is used to build a SQL query.
@@ -78,7 +80,7 @@ func (qb *QueryBuilder) Build(mainQuery string) (string, error) {
 
 // Args adds the given arguments into the builder used for
 // the parameters of a query for columns. The builder is returned.
-func (sa *SqlArgs) Args(args ...any) Builder {
+func (sa *SqlArgs[T]) Args(args ...any) T {
 	sa.builder.Write(args...)
 
 	return sa.builder

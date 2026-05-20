@@ -100,9 +100,18 @@ func ExpireCookieSession(w http.ResponseWriter) {
 	http.SetCookie(w, &c)
 }
 
-// SetCookie sets the cookie with the given key and value to the headers.
-func SetCookie(w http.ResponseWriter, key string, value string) {
+// GetRequestContext retrieves the context value of type T from the http.Request.
+//
+// If the value is not of type T, it will return the zero value of T and false.
+func GetRequestContext[T any](r *http.Request, contextKey ContextKey) (T, bool) {
+	var z T
 
+	v, ok := r.Context().Value(contextKey).(T)
+	if !ok {
+		return z, false
+	}
+
+	return v, true
 }
 
 // logResponseBytes logs the bytes written to the response.

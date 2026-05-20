@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -11,6 +12,13 @@ import (
 
 const (
 	ContentJson = "application/json"
+)
+
+type ContextKey string
+
+const (
+	CONTEXT_USER_SESSION_KEY ContextKey = "userSession"
+	CONTEXT_REQUEST_ID_KEY   ContextKey = "requestId"
 )
 
 type ApiHandler struct {
@@ -51,6 +59,8 @@ func (ah *ApiHandler) CreateRequestMiddleware(f func(http.ResponseWriter, *http.
 // authentication-based closure.
 //
 // Headers are automatically written if wrapped with this method.
+//
+// The UserSessionInfo will be attached in the context for use in the request.
 func (ah *ApiHandler) CreateAuthMiddleware(f func(http.ResponseWriter, *http.Request)) http.Handler {
 	next := http.HandlerFunc(f)
 
@@ -63,19 +73,21 @@ func (ah *ApiHandler) CreateAuthMiddleware(f func(http.ResponseWriter, *http.Req
 			return
 		}
 
-		validSession, err := ah.gateway.Session.ValidateSession(sessionCookie.Value)
+		validSession, ses, err := ah.gateway.Session.ValidateSessionAndGetUser(sessionCookie.Value)
 		if err != nil {
-			ah.log.Criticalf("Validating session database query failed: %v", err)
+			ah.log.Criticalf("Validating session failed: %v", err)
 			WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 			return
 		}
 
 		if !validSession {
-			ah.log.Infof("Invalid session ID, failed validation for %v", r.RemoteAddr)
+			ah.log.Infof("Invalid session ID, unauthroized access from %v", r.RemoteAddr)
 			WriteErrorResponse(w, ErrorUnauthorizedMsg, http.StatusUnauthorized, ReasonUnauthorized)
 
 			return
 		}
+
+		r = r.WithContext(context.WithValue(r.Context(), CONTEXT_USER_SESSION_KEY, ses))
 
 		// refreshes the cookie
 		SetCookieSession(w, sessionCookie.Value)
@@ -89,6 +101,8 @@ func (ah *ApiHandler) CreateAuthMiddleware(f func(http.ResponseWriter, *http.Req
 //
 // The given function is ran between a logging related tasks. The headers are
 // automatically written within this method.
+//
+// The request ID is written to the context of the http.Request.
 func (ah *ApiHandler) middlewareHandler(f func(http.ResponseWriter, *http.Request)) http.Handler {
 	// expected to be wrapped function from the other method
 	next := http.HandlerFunc(f)
@@ -99,6 +113,8 @@ func (ah *ApiHandler) middlewareHandler(f func(http.ResponseWriter, *http.Reques
 
 		ah.log.Infof("Starting new request | id=%s,method=%s", requestID, r.Method)
 		ah.log.Infof("%s: accessed on agent %s", r.RemoteAddr, r.UserAgent())
+
+		r = r.WithContext(context.WithValue(r.Context(), CONTEXT_REQUEST_ID_KEY, requestID))
 
 		WriteHeaders(w, r)
 
