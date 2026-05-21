@@ -31,6 +31,7 @@ database:
     username: root
   account_user:
     username: root
+storage_path: ./app
 server_address: :8080
 ```
 
