@@ -87,7 +87,7 @@ func (ah *ApiHandler) CreateAuthMiddleware(f func(http.ResponseWriter, *http.Req
 			return
 		}
 
-		r = r.WithContext(context.WithValue(r.Context(), CONTEXT_USER_SESSION_KEY, ses))
+		r = ah.writeContext(r, CONTEXT_USER_SESSION_KEY, ses)
 
 		// refreshes the cookie
 		SetCookieSession(w, sessionCookie.Value)
@@ -114,7 +114,7 @@ func (ah *ApiHandler) middlewareHandler(f func(http.ResponseWriter, *http.Reques
 		ah.log.Infof("Starting new request | id=%s,method=%s", requestID, r.Method)
 		ah.log.Infof("%s: accessed on agent %s", r.RemoteAddr, r.UserAgent())
 
-		r = r.WithContext(context.WithValue(r.Context(), CONTEXT_REQUEST_ID_KEY, requestID))
+		r = ah.writeContext(r, CONTEXT_REQUEST_ID_KEY, requestID)
 
 		WriteHeaders(w, r)
 
@@ -127,4 +127,10 @@ func (ah *ApiHandler) middlewareHandler(f func(http.ResponseWriter, *http.Reques
 			finalTime.Seconds(),
 		)
 	})
+}
+
+// writeContext writes the key and its value to r.Context. It will return back
+// a copy of the request with the context.
+func (ah *ApiHandler) writeContext(r *http.Request, key any, value any) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), key, value))
 }
