@@ -82,7 +82,7 @@ func TestFailWriteNoData(t *testing.T) {
 }
 
 // newTestDiskReadWriter creates a new DiskWriter with a testing setup.
-func newTestDiskReadWriter(chunkSize int) *DiskWriter {
+func newTestDiskReadWriter(chunkSize int) *DiskReadWriter {
 	logger := gologger.NewLogger(log.New(os.Stdout, "", log.Ldate|log.Ltime), gologger.Lsilent)
 
 	deps := utils.NewDeps(logger)
