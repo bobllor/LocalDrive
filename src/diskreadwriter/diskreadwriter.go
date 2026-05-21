@@ -16,7 +16,7 @@ const (
 
 // NewDiskWriter creates a new DiskWriter for writing
 // data to the disk.
-func NewDiskWriter(chunkSize int, deps *utils.Deps) *DiskWriter {
+func NewDiskReadWriter(chunkSize int, deps *utils.Deps) *DiskWriter {
 	return &DiskWriter{
 		chunkSize: chunkSize,
 		deps:      deps,
