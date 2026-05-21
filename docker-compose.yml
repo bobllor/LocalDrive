@@ -13,3 +13,8 @@ services:
     volumes:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
+  
+  backend-go:
+    container_name: go-service
+    volumes:
+      - fileswd:/app/fileswd
