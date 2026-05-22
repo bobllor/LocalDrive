@@ -195,6 +195,21 @@ func FlattenFile(files ...File) []any {
 	return out
 }
 
+// ToFileResponses converts a File slice into a FileResponse
+// slice.
+//
+// This is intended to be used for client responses to refrain
+// sending confidential fields.
+func ToFileResponses(files ...File) []FileResponse {
+	responses := []FileResponse{}
+
+	for _, file := range files {
+		responses = append(responses, *file.ToFileResponse())
+	}
+
+	return responses
+}
+
 // ToFileResponse converts the File struct into a
 // FileResponse struct.
 //
