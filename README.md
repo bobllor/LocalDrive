@@ -4,7 +4,7 @@ This is a for fun project of mine that mimics a cloud storage. Used primarily
 for learning how the all the systems interacts with each other: front end, back end,
 network, security, authentication, and more.
 
-It is built with Go, Python, Bash, React TS, Docker, and MariaDB.
+It is built with Go, Python, Bash, React TS, Docker, and MySQL.
 
 ## Requirements
 
@@ -20,7 +20,9 @@ Software requirements:
 
 ## Development
 
-The configuration YAML must be set up for the local dev environment.
+The following goes over how to setup the dev environment.
+
+The configuration YAML must be set up for the local dev environment:
 
 ```yml
 database: 
@@ -31,7 +33,7 @@ database:
     username: root
   account_user:
     username: root
-storage_path: ./app
+storage_path: ./testapp
 server_address: :8080
 ```
 
