@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS File(
     FileName varchar(255),
     FileType varchar(9),
     FileID varchar(50),
+    Extension varchar(25),
     ParentID varchar(255),
     FilePath varchar(5120),
     FileSize int,
@@ -53,11 +54,12 @@ INSERT INTO File
     VALUES
     (
         "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70",
-        "test1.txt",
+        "test1",
         "file",
         "randomfileidhere",
+        ".txt",
         NULL,
-        "/path/to/file",
+        "./testapp/89672a64-f3ff-490c-8f2d-7e5cf5d4aa70/randomfileidhere",
         1234,
         NOW(),
         NULL
@@ -67,19 +69,21 @@ INSERT INTO File
         "folder1",
         "dir",
         "randomfolderidhere",
+        "",
         NULL,
-        "path/to/file",
+        "",
         101,
         NOW(),
         NULL
     ),
     (
         "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70",
-        "test2.txt",
+        "test2",
         "file",
         "anotherfileidhere",
+        ".txt",
         "randomfolderidhere",
-        "/path/to/file",
+        "./testapp/89672a64-f3ff-490c-8f2d-7e5cf5d4aa70/anotherfileidhere",
         1234,
         NOW(),
         NULL
