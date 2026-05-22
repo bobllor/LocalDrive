@@ -1,6 +1,8 @@
 # folders
 storage
 db
+testapp
+app
 
 # files
 *.yml
