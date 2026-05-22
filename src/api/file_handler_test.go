@@ -47,7 +47,7 @@ func TestGetFilesByAccountAndParent(t *testing.T) {
 		assert.Nil(t, err)
 		assert.NotEqual(t, apiRes.Status, StatusError)
 
-		var output []file.File
+		var output []file.FileResponse
 		d, err := json.Marshal(apiRes.Output)
 		assert.Nil(t, err)
 
@@ -55,7 +55,7 @@ func TestGetFilesByAccountAndParent(t *testing.T) {
 		assert.Nil(t, err)
 
 		assert.Equal(t, len(output), 2)
-		assert.Equal(t, output[0].OwnerID, tests.DbRowInfo.AccountID)
+		assert.Equal(t, output[0].FileID, tests.DbRowInfo.FileID)
 	})
 
 	t.Run("Child files from folder", func(t *testing.T) {
@@ -76,7 +76,7 @@ func TestGetFilesByAccountAndParent(t *testing.T) {
 		assert.Nil(t, err)
 		assert.NotEqual(t, apiRes.Status, StatusError)
 
-		var output []file.File
+		var output []file.FileResponse
 		d, err := json.Marshal(apiRes.Output)
 		assert.Nil(t, err)
 
@@ -84,7 +84,8 @@ func TestGetFilesByAccountAndParent(t *testing.T) {
 		assert.Nil(t, err)
 
 		assert.Equal(t, len(output), 1)
-		assert.Equal(t, output[0].OwnerID, tests.DbRowInfo.AccountID)
+		// this is the child file, which has a different ID
+		assert.Equal(t, output[0].FileID, "anotherfileidhere")
 	})
 
 	t.Run("Invalid folder", func(t *testing.T) {
