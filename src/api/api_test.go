@@ -20,7 +20,7 @@ func TestAuthMiddlewareApi(t *testing.T) {
 		SkipCookie bool
 	}
 
-	gw, _ := getGatewayDb(t)
+	gw, _ := dbgateway.NewTestGatewayDB(t)
 	ap := NewApiHandler(gw, tests.NewTestLogger())
 	pattern := "/api/example"
 
@@ -93,7 +93,7 @@ func TestAuthMiddlewareApi(t *testing.T) {
 }
 
 func TestAuthMiddlewareContext(t *testing.T) {
-	gw, _ := getGatewayDb(t)
+	gw, _ := dbgateway.NewTestGatewayDB(t)
 	ap := NewApiHandler(gw, tests.NewTestLogger())
 	urlPattern := "/api/test"
 
