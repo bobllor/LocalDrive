@@ -70,16 +70,13 @@ func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, erro
 	return files, nil
 }
 
-// GetFile retrieves a single file based on the given file ID.
+// GetFile retrieves a single file based on the given file ID. It will return the
+// full File metadata.
 //
 // If the file does not exist, it will return nil. This must be handled.
-func (f *FileGateway) GetFile(fileOwnerId string, fileId string) (*file.FileResponse, error) {
+func (f *FileGateway) GetFile(fileOwnerId string, fileId string) (*file.File, error) {
 	q, args, err := sqlquery.Select(
 		file.TableName,
-		file.ColumnFileName, file.ColumnFileType,
-		file.ColumnFileID, file.ColumnFileExtension,
-		file.ColumnParentID, file.ColumnFileSize,
-		file.ColumnModifiedOn, file.ColumnDeletedOn,
 	).Where().Equal(file.ColumnFileOwnerID, fileOwnerId).And().Equal(file.ColumnFileID, fileId).Build()
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to build query to update: %v | Query: %s | Args: %d", err, q, len(args))
@@ -92,8 +89,7 @@ func (f *FileGateway) GetFile(fileOwnerId string, fileId string) (*file.FileResp
 		return nil, SqlErr
 	}
 
-	var fr []file.FileResponse
-	err = SelectRows(rows, &fr)
+	fr, err := f.getFiles(rows)
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to retrieve data from query: %v | Query: %s", err, q)
 		return nil, SqlErr
