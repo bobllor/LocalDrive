@@ -45,9 +45,9 @@ func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, erro
 	query, args, err := sqlquery.Select(
 		file.TableName,
 		file.ColumnFileName, file.ColumnFileType,
-		file.ColumnFileID, file.ColumnParentID,
-		file.ColumnFileSize, file.ColumnModifiedOn,
-		file.ColumnDeletedOn,
+		file.ColumnFileID, file.ColumnFileExtension,
+		file.ColumnParentID, file.ColumnFileSize,
+		file.ColumnModifiedOn, file.ColumnDeletedOn,
 	).Where().Equal(file.ColumnFileOwnerID, fileOwnerID).Build()
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to build query: %v | Query: %s | Args: %d", err, query, len(args))
@@ -77,9 +77,9 @@ func (f *FileGateway) GetFile(fileOwnerId string, fileId string) (*file.FileResp
 	q, args, err := sqlquery.Select(
 		file.TableName,
 		file.ColumnFileName, file.ColumnFileType,
-		file.ColumnFileID, file.ColumnParentID,
-		file.ColumnFileSize, file.ColumnModifiedOn,
-		file.ColumnDeletedOn,
+		file.ColumnFileID, file.ColumnFileExtension,
+		file.ColumnParentID, file.ColumnFileSize,
+		file.ColumnModifiedOn, file.ColumnDeletedOn,
 	).Where().Equal(file.ColumnFileOwnerID, fileOwnerId).And().Equal(file.ColumnFileID, fileId).Build()
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to build query to update: %v | Query: %s | Args: %d", err, q, len(args))
@@ -144,6 +144,7 @@ func (f *FileGateway) AddFile(files []file.File) error {
 		file.ColumnFileName,
 		file.ColumnFileType,
 		file.ColumnFileID,
+		file.ColumnFileExtension,
 		file.ColumnParentID,
 		file.ColumnFilePath,
 		file.ColumnFileSize,
@@ -300,12 +301,13 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 
 	rows, err := f.database.Query(query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query database: %v | query: %s", err, query)
+		return nil, logQueryError(f.deps.Log, err, query)
 	}
 
 	files, err := f.getFiles(rows)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse File query: %v", err)
+		f.deps.Log.Criticalf("Failed to retrieve (SELECT) files: %v", err)
+		return nil, SqlErr
 	}
 
 	return files, nil
@@ -371,6 +373,7 @@ func (f *FileGateway) getFiles(rows *sql.Rows) ([]file.File, error) {
 			&f.Name,
 			&f.Type,
 			&f.FileID,
+			&f.Extension,
 			&f.ParentID,
 			&f.Path,
 			&f.Size,
