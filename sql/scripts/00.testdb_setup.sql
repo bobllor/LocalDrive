@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS Session(
 );
 
 /* default entries for the test database */
+/* NOTE: the path is not the full path and will be appended to the root folder */
 INSERT INTO UserAccount
     VALUES
     (
@@ -59,7 +60,7 @@ INSERT INTO File
         "randomfileidhere",
         ".txt",
         NULL,
-        "./testapp/89672a64-f3ff-490c-8f2d-7e5cf5d4aa70/randomfileidhere",
+        "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70/randomfileidhere",
         1234,
         NOW(),
         NULL
@@ -83,7 +84,7 @@ INSERT INTO File
         "anotherfileidhere",
         ".txt",
         "randomfolderidhere",
-        "./testapp/89672a64-f3ff-490c-8f2d-7e5cf5d4aa70/anotherfileidhere",
+        "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70/anotherfileidhere",
         1234,
         NOW(),
         NULL
