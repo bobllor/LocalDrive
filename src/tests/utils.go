@@ -49,7 +49,7 @@ var DbRowInfo = TestDbRow{
 	PhcString:  "$argon2id$v=19$m=65536,t=2,p=4$QTdpUkJ3c3J0amlOT2huV2VBR2duZw$vzICl8p5CVfpGfypDV4yIVULsYatAmir6B8nHWtcPtE",
 	SessionID:  "7ca90f85-b1e0-4214-8ff6-4e3720cc8078",
 	FileID:     "randomfileidhere",
-	FileName:   "test1.txt",
+	FileName:   "test1",
 }
 
 // TestPassword is the test password used to create the PhcString for
