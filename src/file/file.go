@@ -11,17 +11,18 @@ import (
 const (
 	// FileColumnSize is the amount of columns used for the Files table.
 	// It is equal to the public fields of the [File] struct.
-	ColumnSize        int    = 9
-	TableName         string = "File"
-	ColumnFileOwnerID string = "AccountID" // ColumnFileOwnerID is the column name for the file's owner account ID.
-	ColumnFileName    string = "FileName"
-	ColumnFileType    string = "FileType"
-	ColumnFileID      string = "FileID"
-	ColumnParentID    string = "ParentID"
-	ColumnFilePath    string = "FilePath"
-	ColumnFileSize    string = "FileSize"
-	ColumnModifiedOn  string = "ModifiedOn"
-	ColumnDeletedOn   string = "DeletedOn"
+	ColumnSize          int    = 10
+	TableName           string = "File"
+	ColumnFileOwnerID   string = "AccountID" // ColumnFileOwnerID is the column name for the file's owner account ID.
+	ColumnFileName      string = "FileName"
+	ColumnFileType      string = "FileType"
+	ColumnFileID        string = "FileID"
+	ColumnFileExtension string = "Extension"
+	ColumnParentID      string = "ParentID"
+	ColumnFilePath      string = "FilePath"
+	ColumnFileSize      string = "FileSize"
+	ColumnModifiedOn    string = "ModifiedOn"
+	ColumnDeletedOn     string = "DeletedOn"
 )
 
 type FileType string
@@ -45,6 +46,9 @@ type File struct {
 
 	// FileID is a unique ID assigned to the file.
 	FileID string `json:"fileID"`
+
+	// Extension is the extension of the file type.
+	Extension string `json:"extension"`
 
 	// ParentID is the parent's unique ID that the file resides in.
 	// This can be nil, meaning it resides in the root folder.
@@ -71,11 +75,12 @@ type File struct {
 
 // FileResponse is the struct representing a File object
 // from the backend. It is the same struct as File, excluding
-// the field FilePath.
+// the field FilePath and OwnerID.
 type FileResponse struct {
 	Name       string     `json:"fileName"`
-	Type       string     `json:"fileType"`
+	Type       FileType   `json:"fileType"`
 	FileID     string     `json:"fileID"`
+	Extension  string     `json:"extension"`
 	ParentID   *string    `json:"parentID"`
 	Size       int64      `json:"fileSize"`
 	ModifiedOn time.Time  `json:"modifedOn"`
@@ -143,6 +148,7 @@ func walk(root string) ([]File, error) {
 				Name:       info.Name(),
 				Type:       fileType,
 				Size:       info.Size(),
+				Extension:  filepath.Ext(p),
 				Path:       p,
 				FileID:     id,
 				ParentID:   parentID,
@@ -178,6 +184,7 @@ func FlattenFile(files ...File) []any {
 		appendFunc(file.Name)
 		appendFunc(file.Type)
 		appendFunc(file.FileID)
+		appendFunc(file.Extension)
 		appendFunc(file.ParentID)
 		appendFunc(file.Path)
 		appendFunc(file.Size)
@@ -186,4 +193,22 @@ func FlattenFile(files ...File) []any {
 	}
 
 	return out
+}
+
+// ToFileResponse converts the File struct into a
+// FileResponse struct.
+//
+// This is intended to be used for client responses to refrain
+// sending confidential fields.
+func (f *File) ToFileResponse() *FileResponse {
+	return &FileResponse{
+		Name:       f.Name,
+		Type:       f.Type,
+		FileID:     f.FileID,
+		Extension:  f.Extension,
+		ParentID:   f.ParentID,
+		Size:       f.Size,
+		ModifiedOn: f.ModifiedOn,
+		DeletedOn:  f.DeletedOn,
+	}
 }
