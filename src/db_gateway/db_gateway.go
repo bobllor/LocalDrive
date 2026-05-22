@@ -16,10 +16,14 @@ type Gateway struct {
 	File    *FileGateway
 	User    *UserGateway
 	Session *SessionGateway
+	// StoragePath is the path to where the files are stored for the user.
+	// It points to the root folder of the storage, and is expected to contain
+	// children folders of the account ID name and their respective files.
+	StoragePath string
 }
 
 // NewGateway creates a new Gateway containing the database gateways.
-func NewGateway(fg *FileGateway, ug *UserGateway, sg *SessionGateway) *Gateway {
+func NewGateway(fg *FileGateway, ug *UserGateway, sg *SessionGateway, storagePath string) *Gateway {
 	gw := &Gateway{
 		File:    fg,
 		User:    ug,
