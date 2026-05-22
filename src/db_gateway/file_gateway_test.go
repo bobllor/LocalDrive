@@ -244,12 +244,13 @@ func TestGetFilesByAccountIDAndParentFolder(t *testing.T) {
 	t.Run("Child folder", func(t *testing.T) {
 		// not located in tests.DbRowInfo, obtained from the test SQL script
 		parent := "randomfolderidhere"
-		baseName := "test2.txt"
+		baseName := "test2"
 		files, err := fg.GetFilesByAccountIdAndParentId(tests.DbRowInfo.AccountID, parent)
 		assert.Nil(t, err)
 
 		assert.Equal(t, len(files), 1)
 		assert.Equal(t, files[0].Name, baseName)
+		assert.Equal(t, files[0].Extension, ".txt")
 	})
 
 	t.Run("Invalid folder", func(t *testing.T) {
