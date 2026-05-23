@@ -25,9 +25,10 @@ type Gateway struct {
 // NewGateway creates a new Gateway containing the database gateways.
 func NewGateway(fg *FileGateway, ug *UserGateway, sg *SessionGateway, storagePath string) *Gateway {
 	gw := &Gateway{
-		File:    fg,
-		User:    ug,
-		Session: sg,
+		File:        fg,
+		User:        ug,
+		Session:     sg,
+		StoragePath: storagePath,
 	}
 
 	return gw
