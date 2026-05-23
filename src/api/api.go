@@ -87,7 +87,7 @@ func (ah *ApiHandler) CreateAuthMiddleware(f func(http.ResponseWriter, *http.Req
 		}
 
 		if !validSession {
-			ah.log.Infof("Invalid session ID, unauthroized access from %v", r.RemoteAddr)
+			ah.log.Infof("Invalid session ID, unauthorized access from %v", r.RemoteAddr)
 			WriteErrorResponse(w, ErrorUnauthorizedMsg, http.StatusUnauthorized, ReasonUnauthorized)
 
 			return
