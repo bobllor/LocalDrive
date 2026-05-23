@@ -3,18 +3,23 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/bobllor/assert"
+	dbgateway "github.com/bobllor/cloud-project/src/db_gateway"
 	"github.com/bobllor/cloud-project/src/file"
 	"github.com/bobllor/cloud-project/src/tests"
 )
 
 func TestGetFilesByAccountAndParent(t *testing.T) {
 	mux := http.NewServeMux()
-	gw, _ := getGatewayDb(t)
+	gw, _ := dbgateway.NewTestGatewayDB(t)
 	ap := NewApiHandler(gw, tests.NewTestLogger())
 
 	fh := NewFileHandler(gw, tests.NewTestLogger())
@@ -107,4 +112,53 @@ func TestGetFilesByAccountAndParent(t *testing.T) {
 
 		assert.Contains(t, apiRes.Error.Message, "Invalid")
 	})
+}
+
+func TestDownloadFile(t *testing.T) {
+	mux := http.NewServeMux()
+	gw, _ := dbgateway.NewTestGatewayDB(t, dbgateway.GatewayDBOptions{CreateStorage: true})
+	ap := NewApiHandler(gw, tests.NewTestLogger())
+
+	mux.Handle(FilePostDownloadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.DownloadFile))
+
+	serv := httptest.NewServer(mux)
+	defer serv.Close()
+
+	url := serv.URL
+	client := serv.Client()
+	apiUrl := url + "/api/download/file/" + tests.DbRowInfo.FileID
+
+	req, err := http.NewRequest("POST", apiUrl, bytes.NewBuffer([]byte{}))
+	assert.Nil(t, err)
+
+	req.AddCookie(&http.Cookie{
+		Name:  CookieSessionKey,
+		Value: tests.DbRowInfo.SessionID,
+	})
+
+	res, err := client.Do(req)
+	assert.Nil(t, err)
+	defer res.Body.Close()
+
+	_, params, err := mime.ParseMediaType(res.Header.Get(ContentDispositionKey))
+	assert.Nil(t, err)
+	fileName, ok := params["filename"]
+	assert.True(t, ok)
+	file := filepath.Join(t.TempDir(), fileName)
+
+	f, err := os.Create(file)
+	assert.Nil(t, err)
+	defer f.Close()
+
+	_, err = io.Copy(f, res.Body)
+	assert.Nil(t, err)
+
+	b, err := os.ReadFile(file)
+	assert.Nil(t, err)
+
+	fs, err := os.Stat(file)
+	assert.Nil(t, err)
+
+	assert.Equal(t, fs.Name(), fileName)
+	assert.True(t, len(b) > 0)
 }
