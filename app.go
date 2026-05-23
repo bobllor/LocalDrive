@@ -76,11 +76,7 @@ func main() {
 	ug := dbgateway.NewUserGateway(udb, deps)
 	sg := dbgateway.NewSessionGateway(udb, deps)
 
-	gw := &dbgateway.Gateway{
-		File:    fg,
-		User:    ug,
-		Session: sg,
-	}
+	gw := dbgateway.NewGateway(fg, ug, sg, scfg.StoragePath)
 
 	serv, err := createServer(gw, logger, scfg.ServerAddress)
 	if err != nil {
@@ -162,6 +158,7 @@ func createServer(gw *dbgateway.Gateway, logger *gologger.Logger, serverAddress 
 	// handles both dynamic and root based access
 	serv.RegisterHandler(api.FileGetFileRootRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFiles))
 	serv.RegisterHandler(api.FileGetFileParentRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFiles))
+	serv.RegisterHandler(api.FilePostDownloadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.DownloadFile))
 
 	return serv, nil
 }
