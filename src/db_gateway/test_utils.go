@@ -57,7 +57,12 @@ func NewTestGatewayDB(t *testing.T, opts ...GatewayDBOptions) (*Gateway, *sql.DB
 			assert.Nil(t, err)
 			r := rand.New(rand.NewSource(time.Now().Unix()))
 
-			err = os.WriteFile(filePath, letters[:r.Intn(len(letters)-1)], 0o744)
+			end := r.Intn(len(letters)) - 1
+			// ensures that we always will have content in the file.
+			if end <= 0 {
+				end += 3
+			}
+			err = os.WriteFile(filePath, letters[:end], 0o744)
 			assert.Nil(t, err)
 		}
 	}
