@@ -35,6 +35,12 @@ export async function fetchApi<T>(path: string, method: Method = "GET", data?: {
         credentials: "include",
     });
 
+    const headers: Array<string> = [];
+    res.headers.forEach((v, k) => {
+        headers.push(`${k}: ${v}`);
+    })
+
+    console.debug(`Response Headers: "${headers}" | Response type: ${res.type}`);
     const r: ResponseApi<T> = await res.json()
 
     // TODO: proper log, output is not logged
