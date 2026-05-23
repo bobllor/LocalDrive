@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,12 +79,15 @@ func (fh *FileHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
-	// removing all periods for normalization
-	fileExt := strings.ReplaceAll(fi.Extension, ".", "")
-	dispostionValue := fmt.Sprintf(`attachment; filename="%s.%s"`, fi.Name, fileExt)
+	// removing leading periods for normalization
+	fileExt := strings.TrimPrefix(fi.Extension, ".")
+	fileName := fmt.Sprintf("%s.%s", fi.Name, fileExt)
+	encodedFileName := url.PathEscape(fileName)
+	dispostionValue := fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, fileName, encodedFileName)
 
 	w.Header().Set(ContentTypeKey, ContentOctet)
 	w.Header().Set(ContentDispositionKey, dispostionValue)
+	w.Header().Set("Access-Control-Expose-Headers", ContentDispositionKey)
 
 	n, err := io.Copy(w, f)
 	if err != nil {
