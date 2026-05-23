@@ -11,7 +11,13 @@ import (
 )
 
 const (
-	ContentJson = "application/json"
+	ContentJson  = "application/json"
+	ContentOctet = "application/octet-stream"
+)
+
+const (
+	ContentTypeKey        = "Content-Type"
+	ContentDispositionKey = "Content-Disposition"
 )
 
 type ContextKey string
