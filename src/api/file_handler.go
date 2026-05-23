@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	dbgateway "github.com/bobllor/cloud-project/src/db_gateway"
 	"github.com/bobllor/cloud-project/src/file"
@@ -16,7 +18,7 @@ const PARENT_ID_KEY = "parentID"
 const FILE_ID_DOWNLOAD_KEY = "fileId"
 
 var FileGetFileParentRoute = fmt.Sprintf("GET /api/storage/folder/{%s}", PARENT_ID_KEY)
-var FileDownloadFileRoute = fmt.Sprintf("POST /api/download/file/{%s}", FILE_ID_DOWNLOAD_KEY)
+var FilePostDownloadFileRoute = fmt.Sprintf("POST /api/download/file/{%s}", FILE_ID_DOWNLOAD_KEY)
 
 const (
 	FileGetFileRootRoute = "GET /api/storage"
@@ -67,13 +69,21 @@ func (fh *FileHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	f, err := os.Open(fi.Path)
+	filePath := filepath.Join(fh.gateway.StoragePath, fi.Path)
+	f, err := os.Open(filePath)
 	if err != nil {
 		fh.deps.Log.Criticalf("Failed to open file: %v | Path: %s", err, fi.Path)
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 		return
 	}
 	defer f.Close()
+
+	// removing all periods for normalization
+	fileExt := strings.ReplaceAll(fi.Extension, ".", "")
+	dispostionValue := fmt.Sprintf(`attachment; filename="%s.%s"`, fi.Name, fileExt)
+
+	w.Header().Set(ContentTypeKey, ContentOctet)
+	w.Header().Set(ContentDispositionKey, dispostionValue)
 
 	n, err := io.Copy(w, f)
 	if err != nil {
@@ -83,9 +93,6 @@ func (fh *FileHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fh.deps.Log.Infof("Wrote %d bytes to stream", n)
-
-	res := NewApiResponse(true)
-	WriteResponse(w, res)
 }
 
 // GetFiles retrieves a slice of Files based on the account ID and the given
@@ -107,11 +114,7 @@ func (fh *FileHandler) GetFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if userContext == nil {
-		requestContext, ok := GetRequestContext[string](r, CONTEXT_REQUEST_ID_KEY)
-		if !ok {
-			fh.deps.Log.Warn("Request ID is missing from middleware context")
-			requestContext = ""
-		}
+		requestContext, _ := GetRequestContext[string](r, CONTEXT_REQUEST_ID_KEY)
 		fh.deps.Log.Infof("Unauthorized access | Request ID: %s", requestContext)
 		WriteErrorResponse(w, ErrorUnauthorizedMsg, http.StatusBadRequest, ReasonBadRequestData)
 		return
