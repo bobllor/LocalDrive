@@ -5,7 +5,6 @@ import React from "react";
 import { useFileListStore } from "./file-list-display-files/FileListStore";
 import { useShallow } from "zustand/shallow";
 import { createUrl } from "../../../server-utils";
-import type { ResponseApi } from "../../../response-types";
 
 const THEAD_ELEMENTS: Array<TableHeadObj> = [
     {
@@ -101,7 +100,7 @@ function FileTableData({fileObj}: FileObjProps): JSX.Element{
             <td className={cssClass}>
                 {
                     fileObj.fileType != "dir" &&
-                    <span 
+                    <span
                     className="hover:bg-gray-500 rounded-2xl px-1.5 flex justify-center items-center"
                     onClick={() => downloadFile(fileObj.fileID)}>
                         D
@@ -112,61 +111,17 @@ function FileTableData({fileObj}: FileObjProps): JSX.Element{
     )
 }
 
-async function downloadFile(fileId: string): Promise<void>{
-    const res = await fetch(createUrl(`/api/download/file/${fileId}`), {
-        method: "POST",
-        credentials: "include",
-    });
-    if(!res.ok){
-        const resApiErr: ResponseApi<any> = await res.json();
-        throw new Error(`TODO: FIX ME ${resApiErr}`);
-    }
-
-    const disposition = res.headers.get("content-disposition");
-    if(!disposition){
-        throw new Error("TODO: FIX ME");
-    }
-
-    // TODO: will need to handle this if there are more dispositions added
-    const fileRegex = /.*filename*=.+''(.+)/;
-    const fallBackRegex = /.*filename="(.+)".*/;
-
-    let fileName = "unknown";
-    const fileRegArr = fileRegex.exec(disposition);
-    let fallback = false;
-    if(fileRegArr && fileRegArr.length > 1){
-        const uriName = fileRegArr.at(-1);
-        if(uriName){
-            fileName = decodeURIComponent(uriName);
-        }else{
-            fallback = true;
-        }
-    }else{
-        fallback = true;
-    }
-
-    if(fallback){
-        console.error(`Failed to parse filename* disposition: ${disposition}`);
-        const fallBackArr = fallBackRegex.exec(disposition);
-        if(fallBackArr && fallBackArr.length > 1){
-            fileName = fallBackArr[-1];
-        }else{
-            console.error(`Failed to retrieve fallback filename for disposition`);
-        }
-    }
-
-    const blob = await res.blob();
+function downloadFile(fileId: string): void{
     let a = window.document.createElement("a");
-    const fileUrl = window.URL.createObjectURL(blob);
+    const fileUrl = createUrl(`/api/download/file/${fileId}`);
 
     a.href = fileUrl;
     a.style.display = "none";
-    a.download = fileName;
 
     document.body.appendChild(a);
 
     a.click();
-    a.remove();
+    document.body.removeChild(a);
 }
 
 type TableHeadObj = {
