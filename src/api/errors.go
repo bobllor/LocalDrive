@@ -6,8 +6,11 @@ var (
 	ReasonInternalError ReasonCode = "INTERNAL_ERROR"
 
 	// ReasonBadRequestData is used if the response body is invalid or fails to meet
-	// requirements of a method when its consumed.
+	// requirements of a method when its consumed. This is a generic bad data request.
 	ReasonBadRequestData ReasonCode = "BAD_DATA"
+
+	// ReasonFileDoesNotExist is used if the file does not have an entry in the database.
+	ReasonFileDoesNotExist ReasonCode = "FILE_DOES_NOT_EXIST"
 
 	// ReasonUserAlreadyExists is used for when the SQL database rejects the user
 	// due to a duplicate entry.
