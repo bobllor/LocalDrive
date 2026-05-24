@@ -61,7 +61,7 @@ INSERT INTO File
         ".txt",
         NULL,
         "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70/randomfileidhere",
-        1234,
+        0,
         NOW(),
         NULL
     ),
@@ -73,7 +73,7 @@ INSERT INTO File
         "",
         NULL,
         "",
-        101,
+        0,
         NOW(),
         NULL
     ),
@@ -85,7 +85,7 @@ INSERT INTO File
         ".txt",
         "randomfolderidhere",
         "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70/anotherfileidhere",
-        1234,
+        0,
         NOW(),
         NULL
     );
