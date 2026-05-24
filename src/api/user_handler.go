@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	dbcon "github.com/bobllor/cloud-project/src/db_gateway"
 	"github.com/bobllor/cloud-project/src/utils"
@@ -114,6 +115,8 @@ func (uh *UserHandler) PostLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// lowercasing and removing spaces for validation, the username is case sensitive
+	user.Username = strings.TrimSpace(strings.ToLower(user.Username))
 	validUser, ua, err := uh.Gateway.User.ValidateUser(user.Username, user.Password)
 	if err != nil {
 		uh.deps.Log.Criticalf("Error occurred during user validation: %v", err)
@@ -192,6 +195,8 @@ func (uh *UserHandler) PostRegisterUser(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// lowercasing and removing spaces for validation, the username is case sensitive
+	user.Username = strings.TrimSpace(strings.ToLower(user.Username))
 	acc, err := uh.Gateway.User.AddUser(user.Username, user.Password)
 	if err != nil {
 		if dbcon.IsDuplicateSqlError(err) {
