@@ -217,7 +217,7 @@ func (ug *UserGateway) GetUserByUsername(username string) (*user.UserAccount, er
 // password is compared and will return a boolean and the user info. If an error occurs,
 // then an error will be returned instead.
 //
-// The username will always be lowercased and spaces are trimmed.
+// The username will be lowercased and spaces are trimmed by default.
 //
 // If validation is true, then the user will always be returned.
 func (ug *UserGateway) ValidateUser(username string, password string) (bool, *user.UserAccount, error) {
