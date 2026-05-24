@@ -74,8 +74,6 @@ if [[ "$container_status" == "false" ]]; then
         if [[ ! -e "$folder/$file" ]]; then
             touch "$folder/$file"
             echo "Created $folder/$file"
-
-            echo $RANDOM > "$folder/$file"
         else
             echo "Skipping creation of $file: already exists"
         fi
