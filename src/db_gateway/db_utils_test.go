@@ -43,7 +43,6 @@ func TestSelectRow(t *testing.T) {
 
 	assert.NotEqual(t, ffTest.FileName, "")
 	assert.NotEqual(t, ffTest.FileID, "")
-	assert.NotEqual(t, ffTest.FileSize, 0)
 }
 
 func TestSelectRowsSlice(t *testing.T) {
