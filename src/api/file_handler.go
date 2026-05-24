@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	dbgateway "github.com/bobllor/cloud-project/src/db_gateway"
@@ -19,7 +20,7 @@ const PARENT_ID_KEY = "parentID"
 const FILE_ID_DOWNLOAD_KEY = "fileId"
 
 var FileGetFileParentRoute = fmt.Sprintf("GET /api/storage/folder/{%s}", PARENT_ID_KEY)
-var FilePostDownloadFileRoute = fmt.Sprintf("POST /api/download/file/{%s}", FILE_ID_DOWNLOAD_KEY)
+var FilePostDownloadFileRoute = fmt.Sprintf("GET /api/download/file/{%s}", FILE_ID_DOWNLOAD_KEY)
 
 const (
 	FileGetFileRootRoute = "GET /api/storage"
@@ -66,6 +67,13 @@ func (fh *FileHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	if fi == nil {
 		fh.deps.Log.Warnf("File ID %s does not exist", fileId)
+		WriteErrorResponse(w, ErrorBadDataMsg, http.StatusBadRequest, ReasonFileDoesNotExist)
+		return
+	}
+	if fi.Type == file.FileTypeDir {
+		// NOTE: this requires to create the files and zip it in the structure, recursively.
+		// honestly it shouldnt be that hard to make but its not a priority.
+		fh.deps.Log.Warnf("Directories are unsupported for downloading (file ID: %s)", fileId)
 		WriteErrorResponse(w, ErrorBadDataMsg, http.StatusBadRequest, ReasonBadRequestData)
 		return
 	}
@@ -85,9 +93,11 @@ func (fh *FileHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	encodedFileName := url.PathEscape(fileName)
 	dispostionValue := fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, fileName, encodedFileName)
 
+	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set(ContentTypeKey, ContentOctet)
 	w.Header().Set(ContentDispositionKey, dispostionValue)
 	w.Header().Set("Access-Control-Expose-Headers", ContentDispositionKey)
+	w.Header().Set("Content-Length", strconv.Itoa(int(fi.Size)))
 
 	n, err := io.Copy(w, f)
 	if err != nil {
