@@ -160,6 +160,7 @@ func (sg *SessionGateway) ValidateSessionAndGetUser(sessionID string) (bool, *Us
 	//	- session row is not found with account ID
 
 	if !sg.validateID(sessionID) {
+		sg.deps.Log.Warn("Session ID formatting is not valid")
 		return false, nil, nil
 	}
 
@@ -181,22 +182,27 @@ func (sg *SessionGateway) ValidateSessionAndGetUser(sessionID string) (bool, *Us
 
 	rows, err := sg.database.Query(query, sessionID)
 	if err != nil {
+		sg.deps.Log.Criticalf("Failed to query database: %v | Query: %s", err, query)
 		return false, nil, SqlErr
 	}
 
 	var userSesInfo []UserSessionInfo
 	err = SelectRows(rows, &userSesInfo)
 	if err != nil {
+		sg.deps.Log.Criticalf("Failed to select rows: %v", err)
 		return false, nil, SqlErr
 	}
 	if len(userSesInfo) == 0 {
+		sg.deps.Log.Warn("No users found with session ID")
 		return false, nil, nil
 	}
 	ses := userSesInfo[0]
 	if ses.SessionId != sessionID {
+		sg.deps.Log.Warn("Session ID of user does not match with given session ID")
 		return false, nil, nil
 	}
 	if ses.ExpireOn.UTC().Before(time.Now().UTC()) {
+		sg.deps.Log.Warn("Session ID is past the expiration date")
 		return false, nil, nil
 	}
 
