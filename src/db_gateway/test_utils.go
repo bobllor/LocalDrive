@@ -2,11 +2,9 @@ package dbgateway
 
 import (
 	"database/sql"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/bobllor/assert"
 	"github.com/bobllor/cloud-project/src/tests"
@@ -48,21 +46,14 @@ func NewTestGatewayDB(t *testing.T, opts ...GatewayDBOptions) (*Gateway, *sql.DB
 		// obtained from sql test db
 		// NOTE: maybe should make it an easier to read ID but whatever.
 		fileIds := []string{tests.DbRowInfo.FileID, "anotherfileidhere"}
-		letters := []byte("acbdefghjijklmnopqrstuvwxyz")
 
 		for _, id := range fileIds {
 			filePath := filepath.Join(storagePath, tests.DbRowInfo.AccountID, id)
 
 			err = os.MkdirAll(filepath.Dir(filePath), 0o777)
 			assert.Nil(t, err)
-			r := rand.New(rand.NewSource(time.Now().Unix()))
 
-			end := r.Intn(len(letters)) - 1
-			// ensures that we always will have content in the file.
-			if end <= 0 {
-				end += 3
-			}
-			err = os.WriteFile(filePath, letters[:end], 0o744)
+			err = os.WriteFile(filePath, nil, 0o744)
 			assert.Nil(t, err)
 		}
 	}
