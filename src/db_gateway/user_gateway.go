@@ -32,6 +32,7 @@ func NewUserGateway(db *sql.DB, deps *utils.Deps) *UserGateway {
 // AddUser adds a new user into the database. It will return the UserAccount
 // that was created in the database, or an error if one occurred.
 //
+// The username will be lowercased and spaces are trimmed by default.
 // The password is stored as the PHC string from the password hashing function.
 //
 // If the username and password fails to validate, it will return an error that is one of
@@ -39,6 +40,7 @@ func NewUserGateway(db *sql.DB, deps *utils.Deps) *UserGateway {
 // type.
 // Generic errors are returned if an unexpected error occurred during normal processing.
 func (ug *UserGateway) AddUser(username string, password string) (*user.UserAccount, error) {
+	username = strings.TrimSpace(strings.ToLower(username))
 	accountID := uuid.NewString()
 	raw, err := hasher.Hash(password, nil, hasher.DefaultArgon2Params)
 	if err != nil {
@@ -215,8 +217,11 @@ func (ug *UserGateway) GetUserByUsername(username string) (*user.UserAccount, er
 // password is compared and will return a boolean and the user info. If an error occurs,
 // then an error will be returned instead.
 //
+// The username will always be lowercased and spaces are trimmed.
+//
 // If validation is true, then the user will always be returned.
 func (ug *UserGateway) ValidateUser(username string, password string) (bool, *user.UserAccount, error) {
+	username = strings.TrimSpace(strings.ToLower(username))
 	user, err := ug.GetUserByUsername(username)
 	if err != nil {
 		return false, nil, err
