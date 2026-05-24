@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/bobllor/assert"
@@ -115,9 +116,41 @@ func TestLoginUser(t *testing.T) {
 
 	url := tsv.URL + "/api/login"
 
-	t.Run("User Exists", func(t *testing.T) {
+	t.Run("Normal", func(t *testing.T) {
 		b, err := json.Marshal(map[string]string{
 			"username": tests.DbRowInfo.Username,
+			"password": tests.TestPassword,
+		})
+		assert.Nil(t, err)
+
+		t.Cleanup(func() {
+			_, err := dbcon.UpdateRow(
+				db,
+				session.TableName,
+				session.ColumnAccountID,
+				tests.DbRowInfo.AccountID,
+				[]string{session.ColumnSessionID},
+				tests.DbRowInfo.SessionID,
+			)
+			assert.Nil(t, err)
+		})
+
+		res, err := tc.Post(url, ContentJson, bytes.NewBuffer(b))
+		assert.Nil(t, err)
+		defer res.Body.Close()
+
+		var v ApiResponse
+		err = json.NewDecoder(res.Body).Decode(&v)
+		assert.Nil(t, err)
+
+		assert.Equal(t, v.Status, StatusSuccess)
+		assert.Equal(t, v.Output, true)
+		assert.Equal(t, len(res.Cookies()), 1)
+	})
+
+	t.Run("Case sensitive login", func(t *testing.T) {
+		b, err := json.Marshal(map[string]string{
+			"username": strings.ToUpper(tests.DbRowInfo.Username) + " ",
 			"password": tests.TestPassword,
 		})
 		assert.Nil(t, err)
