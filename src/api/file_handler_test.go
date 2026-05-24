@@ -126,39 +126,70 @@ func TestDownloadFile(t *testing.T) {
 
 	url := serv.URL
 	client := serv.Client()
-	apiUrl := url + "/api/download/file/" + tests.DbRowInfo.FileID
+	apiUrlNoFile := url + "/api/download/file/"
 
-	req, err := http.NewRequest("POST", apiUrl, bytes.NewBuffer([]byte{}))
-	assert.Nil(t, err)
+	t.Run("Normal process", func(t *testing.T) {
+		req, err := tests.NewRequest("GET", apiUrlNoFile+tests.DbRowInfo.FileID, nil)
+		assert.Nil(t, err)
 
-	req.AddCookie(&http.Cookie{
-		Name:  CookieSessionKey,
-		Value: tests.DbRowInfo.SessionID,
+		req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+		res, err := client.Do(req)
+		assert.Nil(t, err)
+		defer res.Body.Close()
+
+		_, params, err := mime.ParseMediaType(res.Header.Get(ContentDispositionKey))
+		assert.Nil(t, err)
+		fileName, ok := params["filename"]
+		assert.True(t, ok)
+		filePath := filepath.Join(t.TempDir(), fileName)
+		f, err := os.Create(filePath)
+		assert.Nil(t, err)
+		defer f.Close()
+
+		_, err = io.Copy(f, res.Body)
+		assert.Nil(t, err)
+
+		fs, err := os.Stat(filePath)
+		assert.Nil(t, err)
+
+		assert.Equal(t, fs.Name(), fileName)
 	})
 
-	res, err := client.Do(req)
-	assert.Nil(t, err)
-	defer res.Body.Close()
+	t.Run("Invalid file ID", func(t *testing.T) {
+		req, err := tests.NewRequest("GET", apiUrlNoFile+"fdsa1234dzlk2039sclkorsv", nil)
+		assert.Nil(t, err)
 
-	_, params, err := mime.ParseMediaType(res.Header.Get(ContentDispositionKey))
-	assert.Nil(t, err)
-	fileName, ok := params["filename"]
-	assert.True(t, ok)
-	file := filepath.Join(t.TempDir(), fileName)
+		req.AddCookie(tests.GetCookie(CookieSessionKey))
 
-	f, err := os.Create(file)
-	assert.Nil(t, err)
-	defer f.Close()
+		res, err := client.Do(req)
+		assert.Nil(t, err)
+		defer res.Body.Close()
 
-	_, err = io.Copy(f, res.Body)
-	assert.Nil(t, err)
+		var apiRes ApiResponse
+		err = json.NewDecoder(res.Body).Decode(&apiRes)
+		assert.Nil(t, err)
 
-	b, err := os.ReadFile(file)
-	assert.Nil(t, err)
+		assert.NotNil(t, apiRes.Error)
+		assert.Equal(t, apiRes.Error.Reason, ReasonFileDoesNotExist)
+	})
 
-	fs, err := os.Stat(file)
-	assert.Nil(t, err)
+	t.Run("Directory file ID", func(t *testing.T) {
+		// from test sql script
+		req, err := tests.NewRequest("GET", apiUrlNoFile+"randomfolderidhere", nil)
+		assert.Nil(t, err)
 
-	assert.Equal(t, fs.Name(), fileName)
-	assert.True(t, len(b) > 0)
+		req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+		res, err := client.Do(req)
+		assert.Nil(t, err)
+		defer res.Body.Close()
+
+		var apiRes ApiResponse
+		err = json.NewDecoder(res.Body).Decode(&apiRes)
+		assert.Nil(t, err)
+
+		assert.NotNil(t, apiRes.Error)
+		assert.Equal(t, apiRes.Error.Code, http.StatusBadRequest)
+	})
 }
