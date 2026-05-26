@@ -16,19 +16,27 @@ type Gateway struct {
 	File    *FileGateway
 	User    *UserGateway
 	Session *SessionGateway
-	// StoragePath is the path to where the files are stored for the user.
+	Dir     DirectoryStore
+}
+
+// DirectoryStore is used to store and perform actions on absolute paths of directories.
+type DirectoryStore struct {
+	// Storage is the path to where the files are stored for the user.
 	// It points to the root folder of the storage, and is expected to contain
 	// children folders of the account ID name and their respective files.
-	StoragePath string
+	Storage string
+
+	// Temp is the path to the directory used to store temp files.
+	Temp string
 }
 
 // NewGateway creates a new Gateway containing the database gateways.
-func NewGateway(fg *FileGateway, ug *UserGateway, sg *SessionGateway, storagePath string) *Gateway {
+func NewGateway(fg *FileGateway, ug *UserGateway, sg *SessionGateway, ds DirectoryStore) *Gateway {
 	gw := &Gateway{
-		File:        fg,
-		User:        ug,
-		Session:     sg,
-		StoragePath: storagePath,
+		File:    fg,
+		User:    ug,
+		Session: sg,
+		Dir:     ds,
 	}
 
 	return gw
