@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/bobllor/gologger"
@@ -66,4 +67,20 @@ func CreateFiles(root string) ([]string, error) {
 	}
 
 	return paths, nil
+}
+
+// GetBytes creates a byte slice of arbitrary random data.
+func GetBytes(size int) []byte {
+	b := make([]byte, 0, size)
+	r := rand.New(rand.NewSource(time.Now().Unix()))
+
+	chars := "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	chars += strings.ToLower(chars)
+
+	for range size {
+		ranCh := r.Intn(len(chars) - 1)
+		b = append(b, chars[ranCh])
+	}
+
+	return b
 }
