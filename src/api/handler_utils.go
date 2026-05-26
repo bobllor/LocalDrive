@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/bobllor/gologger"
 )
@@ -112,6 +114,22 @@ func GetRequestContext[T any](r *http.Request, contextKey ContextKey) (T, bool) 
 	}
 
 	return v, true
+}
+
+// CheckEmptyRequestHeadersNotEmpty checks the request headers keys if it has
+// a value and is not empty.
+//
+// It will return an error if a key is empty. The error will contain the missing
+// key value.
+func CheckRequestHeaderNotEmpty(r *http.Request, keys []string) error {
+	for _, k := range keys {
+		val := strings.TrimSpace(r.Header.Get(k))
+		if val == "" {
+			return fmt.Errorf("missing header key %s from request", k)
+		}
+	}
+
+	return nil
 }
 
 // logResponseBytes logs the bytes written to the response.
