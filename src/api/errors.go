@@ -12,6 +12,9 @@ var (
 	// ReasonFileDoesNotExist is used if the file does not have an entry in the database.
 	ReasonFileDoesNotExist ReasonCode = "FILE_DOES_NOT_EXIST"
 
+	// ReasonInvalidHeader is used for header values that are invalid.
+	ReasonInvalidHeader ReasonCode = "INVALID_HEADER"
+
 	// ReasonUserAlreadyExists is used for when the SQL database rejects the user
 	// due to a duplicate entry.
 	ReasonUserAlreadyExists ReasonCode = "USER_ALREADY_EXISTS"
