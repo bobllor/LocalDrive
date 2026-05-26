@@ -15,9 +15,12 @@ type GatewayDBOptions struct {
 	// CreateStorage is used to trigger the creation of the storage and
 	// its files in the temp directory.
 	CreateStorage bool
+	CreateTemp    bool
 }
 
-// NewTestGateway creates a test Gateway and the test sql.DB for use.
+// NewTestGateway creates a test Gateway and the test sql.DB for use. The Gateway will
+// use t.TempDir for its absolute paths for writing, but creation of the paths will
+// require the options to be given.
 //
 // An optional argument can be given to trigger effects in the function.
 //
@@ -40,7 +43,9 @@ func NewTestGatewayDB(t *testing.T, opts ...GatewayDBOptions) (*Gateway, *sql.DB
 	if len(opts) > 0 {
 		opt = opts[0]
 	}
-	storagePath := filepath.Join(t.TempDir(), "testapp", "storage")
+	tmpDir := t.TempDir()
+	storagePath := filepath.Join(tmpDir, "testapp", "storage")
+	tempPath := filepath.Join(tmpDir, "tmp")
 
 	if opt.CreateStorage {
 		// obtained from sql test db
@@ -57,12 +62,21 @@ func NewTestGatewayDB(t *testing.T, opts ...GatewayDBOptions) (*Gateway, *sql.DB
 			assert.Nil(t, err)
 		}
 	}
+	if opt.CreateTemp {
+		err = os.MkdirAll(tempPath, 0o700)
+		assert.Nil(t, err)
+	}
 
 	fg := NewFileGateway(tdb, deps)
 	ug := NewUserGateway(tdb, deps)
 	sg := NewSessionGateway(tdb, deps)
 
-	gw := NewGateway(fg, ug, sg, storagePath)
+	ds := DirectoryStore{
+		Storage: storagePath,
+		Temp:    tempPath,
+	}
+
+	gw := NewGateway(fg, ug, sg, ds)
 
 	return gw, tdb
 }
