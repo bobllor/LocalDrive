@@ -75,8 +75,12 @@ func main() {
 	fg := dbgateway.NewFileGateway(fdb, deps)
 	ug := dbgateway.NewUserGateway(udb, deps)
 	sg := dbgateway.NewSessionGateway(udb, deps)
+	ds := dbgateway.DirectoryStore{
+		Storage: scfg.StoragePath,
+		Temp:    os.TempDir(),
+	}
 
-	gw := dbgateway.NewGateway(fg, ug, sg, scfg.StoragePath)
+	gw := dbgateway.NewGateway(fg, ug, sg, ds)
 
 	serv, err := createServer(gw, logger, scfg.ServerAddress)
 	if err != nil {
