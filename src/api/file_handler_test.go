@@ -4,17 +4,20 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/bobllor/assert"
 	dbgateway "github.com/bobllor/cloud-project/src/db_gateway"
 	"github.com/bobllor/cloud-project/src/file"
 	"github.com/bobllor/cloud-project/src/tests"
+	"github.com/google/uuid"
 )
 
 func TestGetFilesByAccountAndParent(t *testing.T) {
@@ -192,4 +195,68 @@ func TestDownloadFile(t *testing.T) {
 		assert.NotNil(t, apiRes.Error)
 		assert.Equal(t, apiRes.Error.Code, http.StatusBadRequest)
 	})
+}
+
+func TestUploadFile(t *testing.T) {
+	gw, _ := dbgateway.NewTestGatewayDB(t, dbgateway.GatewayDBOptions{CreateTemp: true})
+	ap := NewApiHandler(gw, tests.NewTestLogger())
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(FilePostUploadFileRoute, ap.FileHandler.UploadFile)
+
+	serv := httptest.NewServer(mux)
+	defer serv.Close()
+
+	baseUrl := serv.URL
+	tc := serv.Client()
+
+	b := tests.GetBytes(4 * 1024)
+	chunkLimit := float64(2 * 1024)
+	chunks := math.Ceil(float64(len(b)) / chunkLimit)
+	requestId := uuid.NewString()
+	compareBytes := [][]byte{}
+
+	start := 0
+	end := int(chunkLimit)
+	for i := range int(chunks) {
+		if end > len(b) {
+			end = len(b)
+		}
+		compareBytes = append(compareBytes, b[start:end])
+		body := bytes.NewBuffer(b[start:end])
+		req, err := http.NewRequest("POST", baseUrl+"/api/upload", body)
+		assert.Nil(t, err)
+
+		req.Header.Set(HEADER_UPLOAD_TOTAL_CHUNKS, strconv.Itoa(int(chunks)))
+		req.Header.Set(HEADER_UPLOAD_REQUEST_ID, requestId)
+		req.Header.Set(HEADER_UPLOAD_CHUNK_INDEX, strconv.Itoa(i))
+		req.Header.Set(HEADER_UPLOAD_FILE_SIZE, strconv.Itoa(len(b)))
+
+		res, err := tc.Do(req)
+		assert.Nil(t, err)
+		assert.Equal(t, res.StatusCode, http.StatusOK)
+
+		start += int(chunkLimit)
+		end += int(chunkLimit)
+	}
+
+	uploadMap := ap.FileHandler.uploadSessionMap
+	reqMap, ok := uploadMap[requestId]
+	assert.True(t, ok)
+	assert.Equal(t, len(reqMap.ChunkIndexes), int(chunks))
+
+	for i := range int(chunks) {
+		chunkPath, ok := reqMap.ChunkIndexes[i]
+		assert.True(t, ok)
+
+		p := filepath.Join(chunkPath)
+		cb, err := os.ReadFile(p)
+		assert.Nil(t, err)
+
+		// this assumes that the file maintains order.. but i wrote the file name
+		// creation to maintain this order
+		baseBytes := compareBytes[i]
+
+		assert.Equal(t, string(baseBytes), string(cb))
+	}
 }
