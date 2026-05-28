@@ -53,7 +53,8 @@ type File struct {
 	Extension string `json:"extension"`
 
 	// ParentID is the parent's unique ID that the file resides in.
-	// This can be nil, meaning it resides in the root folder.
+	// This can be nil, meaning it resides in the root folder. An
+	// empty string also represents the root folder.
 	ParentID *string `json:"parentID"`
 
 	// Path is the absolute path to the file on the disk. This is intended
@@ -158,7 +159,11 @@ func (f *File) StringClean() string {
 	write(ColumnFileType, f.Type)
 	write(ColumnFileID, f.FileID)
 	write(ColumnFileExtension, f.Extension)
-	write(ColumnParentID, f.ParentID)
+	var parentIdValue string
+	if f.ParentID != nil {
+		parentIdValue = *f.ParentID
+	}
+	write(ColumnParentID, parentIdValue)
 	write(ColumnFileSize, f.Size)
 	write(ColumnModifiedOn, f.ModifiedOn.UTC().String())
 
