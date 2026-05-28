@@ -87,7 +87,7 @@ func TestAddFile(t *testing.T) {
 		fileIDs = append(fileIDs, files[i].FileID)
 	}
 
-	err = fDb.AddFile(files)
+	err = fDb.AddFile(files...)
 	assert.Nil(t, err)
 
 	qFiles, err := fDb.GetAllFiles(tests.DbRowInfo.AccountID)
@@ -182,7 +182,7 @@ func TestAddDuplicateFileError(t *testing.T) {
 		FileID:  tests.DbRowInfo.FileID,
 	}
 
-	err = fDb.AddFile([]file.File{f})
+	err = fDb.AddFile(f)
 	assert.NotNil(t, err)
 }
 
@@ -195,7 +195,7 @@ func TestAddMissingOwnerIDFileError(t *testing.T) {
 		ModifiedOn: time.Now().UTC(),
 	}
 
-	err = fDb.AddFile([]file.File{f})
+	err = fDb.AddFile(f)
 	assert.NotNil(t, err)
 	assert.True(t, errors.Is(err, SqlErr))
 }

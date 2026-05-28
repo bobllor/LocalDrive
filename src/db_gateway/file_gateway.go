@@ -129,7 +129,7 @@ func (f *FileGateway) UpdateFile(fileOwnerID string, fileId, column string, arg 
 // If an error occurs it will return an error.
 //
 // This does not write the files to the disk.
-func (f *FileGateway) AddFile(files []file.File) error {
+func (f *FileGateway) AddFile(files ...file.File) error {
 	if len(files) == 0 {
 		return fmt.Errorf("no arguments given for AddFile")
 	}

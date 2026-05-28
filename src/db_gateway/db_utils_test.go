@@ -107,7 +107,7 @@ func TestMultipleSelectRows(t *testing.T) {
 		DropRows(fdb.database, user.TableName, user.ColumnAccountID, usr.AccountID)
 	})
 
-	err = fdb.AddFile(files)
+	err = fdb.AddFile(files...)
 	assert.Nil(t, err)
 
 	type MultipleFileColumns struct {
