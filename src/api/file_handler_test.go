@@ -17,7 +17,6 @@ import (
 	dbgateway "github.com/bobllor/cloud-project/src/db_gateway"
 	"github.com/bobllor/cloud-project/src/file"
 	"github.com/bobllor/cloud-project/src/tests"
-	"github.com/google/uuid"
 )
 
 func TestGetFilesByAccountAndParent(t *testing.T) {
@@ -197,12 +196,59 @@ func TestDownloadFile(t *testing.T) {
 	})
 }
 
-func TestUploadFile(t *testing.T) {
+func TestUploadFileId(t *testing.T) {
 	gw, _ := dbgateway.NewTestGatewayDB(t, dbgateway.GatewayDBOptions{CreateTemp: true})
 	ap := NewApiHandler(gw, tests.NewTestLogger())
 
 	mux := http.NewServeMux()
-	mux.HandleFunc(FilePostUploadFileRoute, ap.FileHandler.UploadFile)
+	mux.HandleFunc(FilePostUploadFileRoute, ap.FileHandler.UploadGenerateId)
+
+	serv := httptest.NewServer(mux)
+	defer serv.Close()
+
+	url := serv.URL + "/api/upload"
+	tc := serv.Client()
+
+	t.Run("Normal", func(t *testing.T) {
+		fileName := "a video file.mp4"
+		body, err := tests.NewRequestBody(RequestFileUploadInfo{
+			FileName:      fileName,
+			FileSize:      12345555,
+			FileParentId:  "",
+			FileExtension: ".mp4",
+			TotalChunks:   15,
+		})
+		assert.Nil(t, err)
+
+		res, err := tc.Post(url, ContentJson, body)
+		assert.Nil(t, err)
+
+		var apres ApiResponse[string]
+		err = json.NewDecoder(res.Body).Decode(&apres)
+		assert.Nil(t, err)
+		assert.Nil(t, apres.Error)
+
+		_, ok := ap.FileHandler.uploadSessions[apres.Output]
+		assert.True(t, ok)
+	})
+
+	t.Run("Invalid body", func(t *testing.T) {
+		body, err := tests.NewRequestBody(ApiResponse[any]{})
+		assert.Nil(t, err)
+
+		res, err := tc.Post(url, ContentJson, body)
+		assert.Nil(t, err)
+		assert.True(t, res.StatusCode >= 400)
+	})
+}
+
+func TestUploadFileChunk(t *testing.T) {
+	gw, _ := dbgateway.NewTestGatewayDB(t, dbgateway.GatewayDBOptions{CreateTemp: true})
+	ap := NewApiHandler(gw, tests.NewTestLogger())
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(FilePostUploadFileRoute, ap.FileHandler.UploadGenerateId)
+	mux.HandleFunc(FilePostUploadFileChunkRoute, ap.FileHandler.UploadFileChunk)
 
 	serv := httptest.NewServer(mux)
 	defer serv.Close()
@@ -213,8 +259,27 @@ func TestUploadFile(t *testing.T) {
 	b := tests.GetBytes(4 * 1024)
 	chunkLimit := float64(1024)
 	chunks := math.Ceil(float64(len(b)) / chunkLimit)
-	requestId := uuid.NewString()
 	compareBytes := [][]byte{}
+
+	fileName := "a text file.txt"
+	body, err := tests.NewRequestBody(RequestFileUploadInfo{
+		FileName:      fileName,
+		FileSize:      len(b),
+		FileParentId:  "",
+		FileExtension: ".txt",
+		TotalChunks:   int(chunks),
+	})
+	assert.Nil(t, err)
+
+	uploadres, err := tc.Post(baseUrl+"/api/upload", ContentJson, body)
+	assert.Nil(t, err)
+	assert.True(t, uploadres.StatusCode <= 300)
+	defer uploadres.Body.Close()
+
+	var idres ApiResponse[string]
+	err = json.NewDecoder(uploadres.Body).Decode(&idres)
+	assert.Nil(t, err)
+	assert.Nil(t, idres.Error)
 
 	start := 0
 	end := int(chunkLimit)
@@ -224,13 +289,8 @@ func TestUploadFile(t *testing.T) {
 		}
 		compareBytes = append(compareBytes, b[start:end])
 		body := bytes.NewBuffer(b[start:end])
-		req, err := http.NewRequest("POST", baseUrl+"/api/upload", body)
+		req, err := http.NewRequest("POST", baseUrl+"/api/upload/"+idres.Output+"/"+strconv.Itoa(i), body)
 		assert.Nil(t, err)
-
-		req.Header.Set(HEADER_UPLOAD_TOTAL_CHUNKS, strconv.Itoa(int(chunks)))
-		req.Header.Set(HEADER_UPLOAD_REQUEST_ID, requestId)
-		req.Header.Set(HEADER_UPLOAD_CHUNK_INDEX, strconv.Itoa(i))
-		req.Header.Set(HEADER_UPLOAD_FILE_SIZE, strconv.Itoa(len(b)))
 
 		res, err := tc.Do(req)
 		assert.Nil(t, err)
@@ -241,7 +301,7 @@ func TestUploadFile(t *testing.T) {
 	}
 
 	uploadMap := ap.FileHandler.uploadSessions
-	reqMap, ok := uploadMap[requestId]
+	reqMap, ok := uploadMap[idres.Output]
 	assert.True(t, ok)
 	assert.Equal(t, len(reqMap.ChunkIndexes), int(chunks))
 
@@ -266,8 +326,9 @@ func TestCompleteUploadFile(t *testing.T) {
 	ap := NewApiHandler(gw, tests.NewTestLogger())
 
 	mux := http.NewServeMux()
-	mux.HandleFunc(FilePostUploadFileRoute, ap.FileHandler.UploadFile)
-	mux.Handle(FilePostCompleteUploadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.CompleteUploadFile))
+	mux.HandleFunc(FilePostUploadFileRoute, ap.FileHandler.UploadGenerateId)
+	mux.HandleFunc(FilePostUploadFileChunkRoute, ap.FileHandler.UploadFileChunk)
+	mux.Handle(FilePostUploadFileCompleteRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileComplete))
 
 	serv := httptest.NewServer(mux)
 	defer serv.Close()
@@ -278,7 +339,26 @@ func TestCompleteUploadFile(t *testing.T) {
 	b := tests.GetBytes(4 * 1024)
 	chunkLimit := float64(1024)
 	chunks := math.Ceil(float64(len(b)) / chunkLimit)
-	requestId := uuid.NewString()
+
+	fileName := "a text file.txt"
+	body, err := tests.NewRequestBody(RequestFileUploadInfo{
+		FileName:      fileName,
+		FileSize:      len(b),
+		FileParentId:  "",
+		FileExtension: ".txt",
+		TotalChunks:   int(chunks),
+	})
+	assert.Nil(t, err)
+
+	uploadres, err := tc.Post(baseUrl+"/api/upload", ContentJson, body)
+	assert.Nil(t, err)
+	assert.True(t, uploadres.StatusCode <= 300)
+	defer uploadres.Body.Close()
+
+	var idres ApiResponse[string]
+	err = json.NewDecoder(uploadres.Body).Decode(&idres)
+	assert.Nil(t, err)
+	assert.Nil(t, idres.Error)
 
 	start := 0
 	end := int(chunkLimit)
@@ -287,13 +367,8 @@ func TestCompleteUploadFile(t *testing.T) {
 			end = len(b)
 		}
 		body := bytes.NewBuffer(b[start:end])
-		req, err := http.NewRequest("POST", baseUrl+"/api/upload", body)
+		req, err := http.NewRequest("POST", baseUrl+"/api/upload/"+idres.Output+"/"+strconv.Itoa(i), body)
 		assert.Nil(t, err)
-
-		req.Header.Set(HEADER_UPLOAD_TOTAL_CHUNKS, strconv.Itoa(int(chunks)))
-		req.Header.Set(HEADER_UPLOAD_REQUEST_ID, requestId)
-		req.Header.Set(HEADER_UPLOAD_CHUNK_INDEX, strconv.Itoa(i))
-		req.Header.Set(HEADER_UPLOAD_FILE_SIZE, strconv.Itoa(len(b)))
 
 		res, err := tc.Do(req)
 		assert.Nil(t, err)
@@ -303,11 +378,10 @@ func TestCompleteUploadFile(t *testing.T) {
 		end += int(chunkLimit)
 	}
 
-	req, err := tests.NewRequest("POST", baseUrl+"/api/upload/complete", nil)
+	req, err := tests.NewRequest("POST", baseUrl+"/api/upload/"+idres.Output+"/complete", nil)
 	assert.Nil(t, err)
 
 	req.AddCookie(tests.GetCookie(CookieSessionKey))
-	req.Header.Set(HEADER_UPLOAD_REQUEST_ID, requestId)
 
 	res, err := tc.Do(req)
 	assert.Nil(t, err)
