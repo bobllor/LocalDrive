@@ -61,7 +61,7 @@ func (uh *UserHandler) GetUserBySessionID(w http.ResponseWriter, r *http.Request
 	}
 
 	if ua == nil {
-		WriteResponse(w, NewApiResponse(nil))
+		WriteResponse(w, NewApiResponse[any](nil))
 	} else {
 		res := NewApiResponse(ua)
 		n, err := WriteResponse(w, res)

@@ -44,7 +44,7 @@ func TestPostRegisterUser(t *testing.T) {
 		assert.True(t, res.StatusCode <= http.StatusBadRequest)
 		defer res.Body.Close()
 
-		var apres ApiResponse
+		var apres ApiResponse[bool]
 		err = json.NewDecoder(res.Body).Decode(&apres)
 		assert.Nil(t, err)
 		assert.NotNil(t, apres)
@@ -62,7 +62,7 @@ func TestPostRegisterUser(t *testing.T) {
 		assert.Equal(t, res.StatusCode, http.StatusBadRequest)
 		defer res.Body.Close()
 
-		var apres ApiResponse
+		var apres ApiResponse[bool]
 		err = json.NewDecoder(res.Body).Decode(&apres)
 		assert.Nil(t, err)
 
@@ -91,7 +91,7 @@ func TestPostRegisterUser(t *testing.T) {
 		res, err := c.Do(req)
 		assert.Nil(t, err)
 
-		var apiRes ApiResponse
+		var apiRes ApiResponse[bool]
 		err = json.NewDecoder(res.Body).Decode(&apiRes)
 		assert.Nil(t, err)
 
@@ -139,7 +139,7 @@ func TestLoginUser(t *testing.T) {
 		assert.Nil(t, err)
 		defer res.Body.Close()
 
-		var v ApiResponse
+		var v ApiResponse[bool]
 		err = json.NewDecoder(res.Body).Decode(&v)
 		assert.Nil(t, err)
 
@@ -171,7 +171,7 @@ func TestLoginUser(t *testing.T) {
 		assert.Nil(t, err)
 		defer res.Body.Close()
 
-		var v ApiResponse
+		var v ApiResponse[bool]
 		err = json.NewDecoder(res.Body).Decode(&v)
 		assert.Nil(t, err)
 
@@ -191,7 +191,7 @@ func TestLoginUser(t *testing.T) {
 		assert.Nil(t, err)
 		defer res.Body.Close()
 
-		var v ApiResponse
+		var v ApiResponse[bool]
 		err = json.NewDecoder(res.Body).Decode(&v)
 		assert.Nil(t, err)
 
@@ -250,12 +250,12 @@ func TestLogoutUser(t *testing.T) {
 	res, err = tc.Do(req)
 	assert.Nil(t, err)
 
-	var apiRes ApiResponse
+	var apiRes ApiResponse[bool]
 	err = json.NewDecoder(res.Body).Decode(&apiRes)
 	assert.Nil(t, err)
 
 	assert.Equal(t, apiRes.Status, StatusSuccess)
-	assert.True(t, apiRes.Output.(bool))
+	assert.True(t, apiRes.Output)
 
 	cookie, err := res.Request.Cookie(CookieSessionKey)
 	assert.Nil(t, err)

@@ -75,7 +75,7 @@ func TestAuthMiddlewareApi(t *testing.T) {
 			res, err := client.Do(req)
 			assert.Nil(t, err)
 
-			var apiRes ApiResponse
+			var apiRes ApiResponse[any]
 			err = json.NewDecoder(res.Body).Decode(&apiRes)
 			assert.Nil(t, err)
 
