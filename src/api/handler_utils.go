@@ -2,10 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/bobllor/cloud-project/src/utils"
 	"github.com/bobllor/gologger"
 )
 
@@ -16,6 +18,65 @@ const (
 type HandlerMap map[string]func(http.ResponseWriter, *http.Request)
 
 type Handler interface{}
+
+type Utility struct {
+	Log *gologger.Logger
+}
+
+// HttpWriteUnauthorizedError writes a generic unauthorized error ot the ResponseWriter
+// and logs a given message at the INFO level.
+//
+// It uses the context given in the http.Request to extract the request ID of the request.
+// If the request ID does not exist, then it will log normally.
+func (u *Utility) HttpWriteUnauthorizedError(w http.ResponseWriter, r *http.Request) {
+	requestContext, _ := GetRequestContext[string](r, CONTEXT_REQUEST_ID_KEY)
+	u.Log.Infof("Unauthorized access | Request ID: %s", requestContext)
+	WriteErrorResponse(w, ErrorUnauthorizedMsg, http.StatusUnauthorized, ReasonUnauthorized)
+}
+
+// HttpWriteInternalError writes a generic internal error to the ResponseWriter and logs
+// a given message at the CRITICAL level.
+//
+// If an empty string is given for the format, then it will not log.
+func (u *Utility) HttpWriteInternalError(w http.ResponseWriter, format string, v ...any) {
+	if format != "" {
+		u.Log.Criticalf(format, v...)
+	}
+	WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
+}
+
+// HttpWriteBadDataError writes a generic bad data error to the ResponseWriter and logs
+// a given message at the WARN level.
+//
+// If an empty string is given for the format, then it will not log.
+func (u *Utility) HttpWriteBadDataError(w http.ResponseWriter, format string, v ...any) {
+	if format != "" {
+		u.Log.Warnf(format, v...)
+	}
+	WriteErrorResponse(w, ErrorBadDataMsg, http.StatusBadRequest, ReasonBadRequestData)
+}
+
+// HttpWriteCustomBadDataError writes a bad data error to the ResponseWriter with modications
+// on the client error message and the reason code.
+//
+// It logs at the WARN level. If an empty string is given for the log message, then it will not log.
+func (u *Utility) HttpWriteCustomBadDataError(w http.ResponseWriter, errMsg string, reason ReasonCode, logMsg string) {
+	if logMsg != "" {
+		u.Log.Warn(logMsg)
+	}
+	errMsg = utils.ToUpperFirstChar(errMsg)
+	WriteErrorResponse(w, errMsg, http.StatusBadRequest, reason)
+}
+
+// HttpWriteCustomBadDataErrorf writes a bad data error to the ResponseWriter with modications
+// on the client error message and the reason code.
+//
+// It logs at the WARN level.
+func (u *Utility) HttpWriteCustomBadDataErrorf(w http.ResponseWriter, errMsg string, reason ReasonCode, format string, v ...any) {
+	u.Log.Warnf(format, v...)
+	errMsg = utils.ToUpperFirstChar(errMsg)
+	WriteErrorResponse(w, errMsg, http.StatusBadRequest, reason)
+}
 
 // WriteErrorResponse is a helper function used to write an error to
 // the ResponseWriter.
@@ -122,11 +183,19 @@ func GetRequestContext[T any](r *http.Request, contextKey ContextKey) (T, bool) 
 // It will return an error if a key is empty. The error will contain the missing
 // key value.
 func CheckRequestHeaderNotEmpty(r *http.Request, keys []string) error {
+	missing := []string{}
 	for _, k := range keys {
 		val := strings.TrimSpace(r.Header.Get(k))
 		if val == "" {
-			return fmt.Errorf("missing header key %s from request", k)
+			missing = append(missing, k)
 		}
+	}
+
+	if len(missing) > 0 {
+		joinedMissingKeys := strings.Join(missing, ",")
+		msg := fmt.Sprintf("missing headers: %s", joinedMissingKeys)
+
+		return errors.New(msg)
 	}
 
 	return nil
