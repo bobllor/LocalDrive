@@ -50,7 +50,7 @@ func TestGetFilesByAccountAndParent(t *testing.T) {
 		assert.NotEqual(t, res.StatusCode, 404)
 		defer res.Body.Close()
 
-		var apiRes ApiResponse
+		var apiRes ApiResponse[[]file.FileResponse]
 		err = json.NewDecoder(res.Body).Decode(&apiRes)
 		assert.Nil(t, err)
 		assert.NotEqual(t, apiRes.Status, StatusError)
@@ -79,7 +79,7 @@ func TestGetFilesByAccountAndParent(t *testing.T) {
 		assert.NotEqual(t, res.StatusCode, 404)
 		defer res.Body.Close()
 
-		var apiRes ApiResponse
+		var apiRes ApiResponse[[]file.FileResponse]
 		err = json.NewDecoder(res.Body).Decode(&apiRes)
 		assert.Nil(t, err)
 		assert.NotEqual(t, apiRes.Status, StatusError)
@@ -108,7 +108,7 @@ func TestGetFilesByAccountAndParent(t *testing.T) {
 		assert.True(t, res.StatusCode == http.StatusBadRequest)
 		defer res.Body.Close()
 
-		var apiRes ApiResponse
+		var apiRes ApiResponse[[]file.FileResponse]
 		err = json.NewDecoder(res.Body).Decode(&apiRes)
 		assert.Nil(t, err)
 		assert.Equal(t, apiRes.Status, StatusError)
@@ -169,7 +169,7 @@ func TestDownloadFile(t *testing.T) {
 		assert.Nil(t, err)
 		defer res.Body.Close()
 
-		var apiRes ApiResponse
+		var apiRes ApiResponse[any]
 		err = json.NewDecoder(res.Body).Decode(&apiRes)
 		assert.Nil(t, err)
 
@@ -188,7 +188,7 @@ func TestDownloadFile(t *testing.T) {
 		assert.Nil(t, err)
 		defer res.Body.Close()
 
-		var apiRes ApiResponse
+		var apiRes ApiResponse[any]
 		err = json.NewDecoder(res.Body).Decode(&apiRes)
 		assert.Nil(t, err)
 
@@ -211,7 +211,7 @@ func TestUploadFile(t *testing.T) {
 	tc := serv.Client()
 
 	b := tests.GetBytes(4 * 1024)
-	chunkLimit := float64(2 * 1024)
+	chunkLimit := float64(1024)
 	chunks := math.Ceil(float64(len(b)) / chunkLimit)
 	requestId := uuid.NewString()
 	compareBytes := [][]byte{}
@@ -240,7 +240,7 @@ func TestUploadFile(t *testing.T) {
 		end += int(chunkLimit)
 	}
 
-	uploadMap := ap.FileHandler.uploadSessionMap
+	uploadMap := ap.FileHandler.uploadSessions
 	reqMap, ok := uploadMap[requestId]
 	assert.True(t, ok)
 	assert.Equal(t, len(reqMap.ChunkIndexes), int(chunks))
@@ -259,4 +259,67 @@ func TestUploadFile(t *testing.T) {
 
 		assert.Equal(t, string(baseBytes), string(cb))
 	}
+}
+
+func TestCompleteUploadFile(t *testing.T) {
+	gw, db := dbgateway.NewTestGatewayDB(t, dbgateway.GatewayDBOptions{CreateTemp: true})
+	ap := NewApiHandler(gw, tests.NewTestLogger())
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(FilePostUploadFileRoute, ap.FileHandler.UploadFile)
+	mux.Handle(FilePostCompleteUploadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.CompleteUploadFile))
+
+	serv := httptest.NewServer(mux)
+	defer serv.Close()
+
+	baseUrl := serv.URL
+	tc := serv.Client()
+
+	b := tests.GetBytes(4 * 1024)
+	chunkLimit := float64(1024)
+	chunks := math.Ceil(float64(len(b)) / chunkLimit)
+	requestId := uuid.NewString()
+
+	start := 0
+	end := int(chunkLimit)
+	for i := range int(chunks) {
+		if end > len(b) {
+			end = len(b)
+		}
+		body := bytes.NewBuffer(b[start:end])
+		req, err := http.NewRequest("POST", baseUrl+"/api/upload", body)
+		assert.Nil(t, err)
+
+		req.Header.Set(HEADER_UPLOAD_TOTAL_CHUNKS, strconv.Itoa(int(chunks)))
+		req.Header.Set(HEADER_UPLOAD_REQUEST_ID, requestId)
+		req.Header.Set(HEADER_UPLOAD_CHUNK_INDEX, strconv.Itoa(i))
+		req.Header.Set(HEADER_UPLOAD_FILE_SIZE, strconv.Itoa(len(b)))
+
+		res, err := tc.Do(req)
+		assert.Nil(t, err)
+		assert.Equal(t, res.StatusCode, http.StatusOK)
+
+		start += int(chunkLimit)
+		end += int(chunkLimit)
+	}
+
+	req, err := tests.NewRequest("POST", baseUrl+"/api/upload/complete", nil)
+	assert.Nil(t, err)
+
+	req.AddCookie(tests.GetCookie(CookieSessionKey))
+	req.Header.Set(HEADER_UPLOAD_REQUEST_ID, requestId)
+
+	res, err := tc.Do(req)
+	assert.Nil(t, err)
+	assert.True(t, res.StatusCode < 300)
+	defer res.Body.Close()
+
+	var apres ApiResponse[*file.FileResponse]
+	err = json.NewDecoder(res.Body).Decode(&apres)
+	assert.Nil(t, err)
+	assert.Nil(t, apres.Error)
+
+	t.Cleanup(func() {
+		dbgateway.DropRows(db, file.TableName, file.ColumnFileID, apres.Output.FileID)
+	})
 }
