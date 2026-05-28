@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	dbgateway "github.com/bobllor/cloud-project/src/db_gateway"
 	"github.com/bobllor/cloud-project/src/file"
@@ -26,8 +27,9 @@ var FileGetFileParentRoute = fmt.Sprintf("GET /api/storage/folder/{%s}", PARENT_
 var FilePostDownloadFileRoute = fmt.Sprintf("GET /api/download/file/{%s}", FILE_ID_DOWNLOAD_KEY)
 
 const (
-	FileGetFileRootRoute    = "GET /api/storage"
-	FilePostUploadFileRoute = "POST /api/upload"
+	FileGetFileRootRoute            = "GET /api/storage"
+	FilePostUploadFileRoute         = "POST /api/upload"
+	FilePostCompleteUploadFileRoute = "POST /api/upload/complete"
 )
 
 const (
@@ -35,23 +37,29 @@ const (
 	HEADER_UPLOAD_FILE_SIZE    = "Upload-File-Size"
 	HEADER_UPLOAD_TOTAL_CHUNKS = "Upload-Total-Chunks"
 	HEADER_UPLOAD_CHUNK_INDEX  = "Upload-Chunk-Index"
+	HEADER_UPLOAD_PARENT_ID    = "Upload-Parent-Id"
 )
 
 const CHUNKS_DIR_NAME = "lcschunks"
 
+// FileHandler is the handler used for file related operations in the API.
 type FileHandler struct {
 	gateway *dbgateway.Gateway
-	deps    *utils.Deps
+	util    *Utility
 
 	// uploadSession is a map of request IDs to a chunkInfo used to
 	// hold the information with multi-chunk requests.
 	//
 	// This is used to write files to the disk from uploads.
-	uploadSessionMap map[string]chunkInfo
+	uploadSessions map[string]chunkInfo
 
-	// reqMutexes is the map of mutexes of a given request ID. This will ensure
-	// the locks will be on the specific request ID.
-	reqMutexes map[string]*sync.Mutex
+	// uploadMutexes is the map of mutexes of a given upload ID for uploading files. This ensures that
+	// chunks will not be modified or accessed while one is already active.
+	uploadMutexes map[string]*sync.Mutex
+
+	// completeMutexes is the map of mutexes of a given upload ID for completion of the uploading files.
+	// This prevents overwriting or accessing the same file during chunk merging.
+	completeMutexes map[string]*sync.Mutex
 }
 
 type chunkInfo struct {
@@ -78,9 +86,11 @@ type chunkInfo struct {
 
 func NewFileHandler(gw *dbgateway.Gateway, logger *gologger.Logger) *FileHandler {
 	return &FileHandler{
-		gateway:          gw,
-		deps:             utils.NewDeps(logger),
-		uploadSessionMap: make(map[string]chunkInfo),
+		gateway:         gw,
+		util:            &Utility{Log: logger},
+		uploadSessions:  make(map[string]chunkInfo),
+		uploadMutexes:   make(map[string]*sync.Mutex),
+		completeMutexes: make(map[string]*sync.Mutex),
 	}
 }
 
@@ -91,44 +101,39 @@ func NewFileHandler(gw *dbgateway.Gateway, logger *gologger.Logger) *FileHandler
 func (fh *FileHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	usrInfo, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
 	if !ok {
-		fh.deps.Log.Critical("User context is not of type *dbgateway.UserSessionInfo")
+		fh.util.Log.Critical("User context is not of type *dbgateway.UserSessionInfo")
 		WriteErrorResponse(w, ErrorUnauthorizedMsg, http.StatusUnauthorized, ReasonUnauthorized)
 		return
 	}
 
 	fileId := r.PathValue(FILE_ID_DOWNLOAD_KEY)
 	if fileId == "" {
-		fh.deps.Log.Warnf("Path value %s is empty", FILE_ID_DOWNLOAD_KEY)
-		WriteErrorResponse(w, ErrorBadDataMsg, http.StatusBadRequest, ReasonBadRequestData)
+		fh.util.HttpWriteBadDataError(w, "Path value %s is empty", FILE_ID_DOWNLOAD_KEY)
 		return
 	}
 
-	fh.deps.Log.Debugf("File ID: %s", fileId)
+	fh.util.Log.Debugf("File ID: %s", fileId)
 
 	fi, err := fh.gateway.File.GetFile(usrInfo.AccountId, fileId)
 	if err != nil {
-		fh.deps.Log.Criticalf("Error while attempting to query file: %v", err)
-		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
+		fh.util.HttpWriteInternalError(w, "Error while attempting to query file: %v", err)
 		return
 	}
 	if fi == nil {
-		fh.deps.Log.Warnf("File ID %s does not exist", fileId)
-		WriteErrorResponse(w, ErrorBadDataMsg, http.StatusBadRequest, ReasonFileDoesNotExist)
+		fh.util.HttpWriteCustomBadDataErrorf(w, ErrorBadDataMsg, ReasonFileDoesNotExist, "File ID %s does not exist", fileId)
 		return
 	}
 	if fi.Type == file.FileTypeDir {
 		// NOTE: this requires to create the files and zip it in the structure, recursively.
 		// honestly it shouldnt be that hard to make but its not a priority.
-		fh.deps.Log.Warnf("Directories are unsupported for downloading (file ID: %s)", fileId)
-		WriteErrorResponse(w, ErrorBadDataMsg, http.StatusBadRequest, ReasonBadRequestData)
+		fh.util.HttpWriteBadDataError(w, "Directories are unsupported for downloading (file ID: %s)", fileId)
 		return
 	}
 
 	filePath := filepath.Join(fh.gateway.Dir.Storage, fi.Path)
 	f, err := os.Open(filePath)
 	if err != nil {
-		fh.deps.Log.Criticalf("Failed to open file: %v | Path: %s", err, fi.Path)
-		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
+		fh.util.HttpWriteInternalError(w, "Failed to open file: %v | Path: %s", err, fi.Path)
 		return
 	}
 	defer f.Close()
@@ -147,12 +152,12 @@ func (fh *FileHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 
 	n, err := io.Copy(w, f)
 	if err != nil {
-		fh.deps.Log.Criticalf("Failed to write file to stream: %v", err)
+		fh.util.Log.Criticalf("Failed to write file to stream: %v", err)
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 		return
 	}
 
-	fh.deps.Log.Infof("Wrote %d bytes to stream", n)
+	fh.util.Log.Infof("Wrote %d bytes to stream", n)
 }
 
 // UploadFile uploads a file to the backend. The uploaded file can be sent in multiple chunks,
@@ -201,7 +206,7 @@ func (fh *FileHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cinfo, ok := fh.uploadSessionMap[reqId]
+	cinfo, ok := fh.uploadSessions[reqId]
 	if !ok {
 		cinfo = chunkInfo{
 			TotalChunks:  totalChunks,
@@ -209,38 +214,43 @@ func (fh *FileHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 			FileSize:     fileSize,
 		}
 
-		fh.deps.Log.Infof("New chunk info created for %s, total chunks: %d", reqId, totalChunks)
-		fh.uploadSessionMap[reqId] = cinfo
+		fh.util.Log.Infof("New chunk info created for %s, total chunks: %d", reqId, totalChunks)
+		fh.uploadSessions[reqId] = cinfo
 	}
+
+	mutex := fh.getUploadMutex(reqId)
+
+	mutex.Lock()
+	defer mutex.Unlock()
 
 	_, err = os.Stat(cinfo.Dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		fh.deps.Log.Criticalf("Failed to stat directory %s: %v", cinfo.Dir, err)
+		fh.util.Log.Criticalf("Failed to stat directory %s: %v", cinfo.Dir, err)
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 		return
 	}
 	// if file does not exist or dir is empty
 	if cinfo.Dir == "" || errors.Is(err, os.ErrNotExist) {
-		fh.deps.Log.Infof("No chunks directory found for request %s", reqId)
+		fh.util.Log.Infof("No chunks directory found for request %s", reqId)
 
 		reqChunkDir := filepath.Join(fh.gateway.Dir.Temp, CHUNKS_DIR_NAME, reqId)
 		err = os.MkdirAll(reqChunkDir, 0o700)
 		if err != nil {
-			fh.deps.Log.Criticalf("Failed to create directory: %v | Path: %s", err, reqChunkDir)
+			fh.util.Log.Criticalf("Failed to create directory: %v | Path: %s", err, reqChunkDir)
 			WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 			return
 		}
 
-		fh.deps.Log.Infof("Directory set to %s", reqChunkDir)
+		fh.util.Log.Infof("Directory set to %s", reqChunkDir)
 		cinfo.Dir = reqChunkDir
 		// setting directory to the map
-		fh.uploadSessionMap[reqId] = cinfo
+		fh.uploadSessions[reqId] = cinfo
 	}
 
 	chunkName := fmt.Sprintf("chunk-i0%d-*", chunkIndex)
 	chunkFile, err := os.CreateTemp(cinfo.Dir, chunkName)
 	if err != nil {
-		fh.deps.Log.Criticalf("Failed to create temporary chunk file: %v | Path: %s", err, cinfo.Dir)
+		fh.util.Log.Criticalf("Failed to create temporary chunk file: %v | Path: %s", err, cinfo.Dir)
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 		return
 	}
@@ -248,13 +258,17 @@ func (fh *FileHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	n, err := io.Copy(chunkFile, r.Body)
 	if err != nil {
-		fh.deps.Log.Criticalf("Failed to write response body to file: %v", err)
+		fh.util.Log.Criticalf("Failed to write response body to file: %v", err)
+		remErr := os.Remove(chunkFile.Name())
+		if remErr != nil {
+			fh.util.Log.Criticalf("Failed to remove chunk file: %v", err)
+		}
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 		return
 	}
 
 	cinfo.ChunkIndexes[chunkIndex] = chunkFile.Name()
-	fh.deps.Log.Infof("Wrote %d bytes to %s", n, chunkFile.Name())
+	fh.util.Log.Infof("Wrote %d bytes to %s", n, chunkFile.Name())
 }
 
 // CompleteUploadFile is used to indicate that the uploading request has been completed.
@@ -264,85 +278,138 @@ func (fh *FileHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 // If the request ID does not exist, the total chunks doesn't match the written chunks,
 // or missing/invalid headers, then the request will be rejected.
 //
+// Upon a successful upload, it will return a FileResponse response.
+//
 // This requires the auth middleware.
 func (fh *FileHandler) CompleteUploadFile(w http.ResponseWriter, r *http.Request) {
-	usr, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
+	userContext, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
 	if !ok {
-		WriteErrorResponse(w, ErrorUnauthorizedMsg, http.StatusUnauthorized, ReasonUnauthorized)
+		fh.util.HttpWriteUnauthorizedError(w, r)
 		return
 	}
 
 	err := CheckRequestHeaderNotEmpty(r, []string{HEADER_UPLOAD_REQUEST_ID})
 	if err != nil {
-		errMsg := utils.ToUpperFirstChar(err.Error())
-		WriteErrorResponse(w, errMsg, http.StatusBadRequest, ReasonInvalidHeader)
+		msg := utils.ToUpperFirstChar(err.Error())
+		fh.util.HttpWriteCustomBadDataError(w, msg, ReasonInvalidHeader, msg)
 		return
 	}
 
 	reqId := r.Header.Get(HEADER_UPLOAD_REQUEST_ID)
+	// not checked if empty as it can be nil
+	var parentId *string
+	headerParentId := r.Header.Get(HEADER_UPLOAD_PARENT_ID)
+	if headerParentId != "" {
+		parentId = &headerParentId
+	}
 
-	cinfo, ok := fh.uploadSessionMap[reqId]
+	cinfo, ok := fh.uploadSessions[reqId]
 	if !ok {
 		errMsg := fmt.Sprintf("Request ID %s does not exist", reqId)
-		WriteErrorResponse(w, errMsg, http.StatusBadRequest, ReasonInvalidHeader)
+		fh.util.HttpWriteCustomBadDataError(w, errMsg, ReasonInvalidHeader, errMsg)
 		return
 	}
 	if cinfo.TotalChunks != len(cinfo.ChunkIndexes) {
-		fh.deps.Log.Warnf("Total chunks %d does not match written chunks %d", cinfo.TotalChunks, len(cinfo.ChunkIndexes))
+		fh.util.Log.Warnf("Total chunks %d does not match written chunks %d", cinfo.TotalChunks, len(cinfo.ChunkIndexes))
 		WriteErrorResponse(w, "Missing chunks", http.StatusBadRequest, ReasonBadRequestData)
 		return
 	}
 
-	accountDir, err := fh.mkAccountDir(usr.AccountId)
+	accountDir, err := fh.mkAccountDir(userContext.AccountId)
 	if err != nil {
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 		return
 	}
 	fileId := uuid.NewString()
+	fh.util.Log.Debugf("Generated file ID: %s", fileId)
 	storedFilePath := filepath.Join(accountDir, fileId)
+	fh.util.Log.Debugf("File path: %s", storedFilePath)
 
-	sf, err := os.Open(storedFilePath)
+	sf, err := os.Create(storedFilePath)
 	if err != nil {
-		fh.deps.Log.Criticalf("Failed to open file: %v | Path: %s", err, storedFilePath)
+		fh.util.Log.Criticalf("Failed to open file: %v | Path: %s", err, storedFilePath)
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 		return
 	}
 	defer sf.Close()
 
 	for i := range cinfo.TotalChunks {
-		chunkPath, ok := cinfo.ChunkIndexes[i]
-		if !ok {
-			fh.deps.Log.Warnf("Missing chunk index %d", i)
-			WriteErrorResponse(w, "Missing chunks", http.StatusBadRequest, ReasonBadRequestData)
-			return
-		}
-
-		cf, err := os.Open(chunkPath)
-		if err != nil {
-			fh.deps.Log.Criticalf("Failed to open file: %v | Path: %s", err, chunkPath)
-			WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
-			return
-		}
-		defer cf.Close()
-
-		n, err := io.Copy(sf, cf)
-		// abort the process, delete the main file
-		if err != nil {
-			fh.deps.Log.Criticalf("Failed to write to stored file: %v | Path: %s | Chunk index: %d", err, sf.Name(), i)
-
-			err = os.Remove(sf.Name())
-			if err != nil {
-				fh.deps.Log.Criticalf("Failed to remove file: %v", err)
-			} else {
-				fh.deps.Log.Infof("Removed file %s", sf.Name())
+		// anon function due to defer file.Close()
+		err, errMsg, code, reason := func() (error, string, int, ReasonCode) {
+			chunkPath, ok := cinfo.ChunkIndexes[i]
+			if !ok {
+				fh.util.Log.Warnf("Missing chunk index %d", i)
+				err := fmt.Errorf("Chunk index %d is missing (total %d)", i, cinfo.TotalChunks)
+				return err, "Missing chunks", http.StatusBadRequest, ReasonBadRequestData
 			}
 
-			WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
+			cf, err := os.Open(chunkPath)
+			if err != nil {
+				fh.util.Log.Criticalf("Failed to open file: %v | Path: %s", err, chunkPath)
+				return err, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError
+			}
+			defer cf.Close()
+
+			n, err := io.Copy(sf, cf)
+			// abort the process, delete the main file
+			if err != nil {
+				fh.util.Log.Criticalf("Failed to write to stored file: %v | Path: %s | Chunk index: %d", err, sf.Name(), i)
+
+				remErr := os.Remove(sf.Name())
+				if remErr != nil {
+					fh.util.Log.Criticalf("Failed to remove file: %v", err)
+				} else {
+					fh.util.Log.Infof("Removed file %s", sf.Name())
+				}
+
+				return err, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError
+			}
+
+			fh.util.Log.Infof("Wrote %d bytes to %s (chunk index %d)", n, sf.Name(), i)
+
+			return nil, "", http.StatusOK, ""
+		}()
+
+		if err != nil {
+			fh.util.Log.Critical("Failed to merge chunk file")
+			WriteErrorResponse(w, errMsg, code, reason)
 			return
 		}
-
-		fh.deps.Log.Infof("Wrote %d bytes to %s with chunk index %d", n, sf.Name(), i)
 	}
+
+	parent, base := filepath.Split(storedFilePath)
+	// file path stored in the database is relative: <account_id>/<file_id>
+	fileEntryPath := filepath.Join(filepath.Base(parent), base)
+
+	fileEntry := file.File{
+		OwnerID:   userContext.AccountId,
+		Name:      cinfo.FileName,
+		Extension: cinfo.FileExtension,
+		// will never be a directory, files are flattened in the storage
+		Type:       file.FileTypeFile,
+		Size:       int64(cinfo.FileSize),
+		FileID:     fileId,
+		ModifiedOn: time.Now().UTC(),
+		// TODO: parent id
+		ParentID: parentId,
+		Path:     fileEntryPath,
+	}
+
+	fh.util.Log.Debugf("File entry: %s", fileEntry.StringClean())
+
+	err = fh.gateway.File.AddFile(fileEntry)
+	if err != nil {
+		removeErr := os.Remove(storedFilePath)
+		if err != nil {
+			fh.util.Log.Criticalf("Failed to remove file: %v | Path: %s", removeErr, storedFilePath)
+		}
+		fh.util.HttpWriteInternalError(w, "Failed to add file to database: %v", err)
+		return
+	}
+
+	fileRes := fileEntry.ToFileResponse()
+
+	WriteResponse(w, NewApiResponse(fileRes))
 }
 
 // GetFiles retrieves a slice of Files based on the account ID and the given
@@ -355,29 +422,22 @@ func (fh *FileHandler) CompleteUploadFile(w http.ResponseWriter, r *http.Request
 // This requires the auth middleware wrapper due to the context.
 func (fh *FileHandler) GetFiles(w http.ResponseWriter, r *http.Request) {
 	parentID := r.PathValue(PARENT_ID_KEY)
-	fh.deps.Log.Debugf("Request query: %v", parentID)
+	fh.util.Log.Debugf("Request query: %v", parentID)
 
 	userContext, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
 	if !ok {
-		fh.deps.Log.Critical("User context is not of type *dbgateway.UserSessionInfo")
-		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
-		return
-	}
-	if userContext == nil {
-		requestContext, _ := GetRequestContext[string](r, CONTEXT_REQUEST_ID_KEY)
-		fh.deps.Log.Infof("Unauthorized access | Request ID: %s", requestContext)
-		WriteErrorResponse(w, ErrorUnauthorizedMsg, http.StatusBadRequest, ReasonBadRequestData)
+		fh.util.HttpWriteUnauthorizedError(w, r)
 		return
 	}
 
 	files, err := fh.gateway.File.GetFilesByAccountIdAndParentId(userContext.AccountId, parentID)
 	if err == dbgateway.FileDoesNotExistErr {
-		fh.deps.Log.Infof("Given file ID %s does not exist: %v", parentID, err)
+		fh.util.Log.Infof("Given file ID %s does not exist: %v", parentID, err)
 		WriteErrorResponse(w, "Invalid file ID", http.StatusBadRequest, ReasonBadRequestData)
 		return
 	}
 	if err != nil {
-		fh.deps.Log.Criticalf("Failed to retrieve files with session ID and parent folder ID: %v", err)
+		fh.util.Log.Criticalf("Failed to retrieve files with session ID and parent folder ID: %v", err)
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 		return
 	}
@@ -386,12 +446,12 @@ func (fh *FileHandler) GetFiles(w http.ResponseWriter, r *http.Request) {
 	res := NewApiResponse(convertedFiles)
 	n, err := WriteResponse(w, res)
 	if err != nil {
-		fh.deps.Log.Criticalf("Failed to write response to client: %v", err)
+		fh.util.Log.Criticalf("Failed to write response to client: %v", err)
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 		return
 	}
 
-	fh.deps.Log.Debugf("Response bytes: %d", n)
+	fh.util.Log.Debugf("Response bytes: %d", n)
 }
 
 // mkAccountDir creates the directory of the account ID. It will return the directory path upon
@@ -401,23 +461,52 @@ func (fh *FileHandler) mkAccountDir(accountId string) (string, error) {
 
 	err := os.MkdirAll(path, 0o700)
 	if err != nil {
-		fh.deps.Log.Criticalf("Failed to create account storage: %v | Path: %s", err, path)
+		fh.util.Log.Criticalf("Failed to create account storage: %v | Path: %s", err, path)
 		return "", err
 	}
 
 	return path, nil
 }
 
-// clearMutextEntry clears the entry of a given upload ID from the
+// addUploadMutex adds a new entry of the given upload ID into
+// the mutex map and return the created mutex.
+//
+// If the upload ID already exists, then it will return the mutex.
+func (fh *FileHandler) addUploadMutex(uploadId string) *sync.Mutex {
+	mutex, ok := fh.uploadMutexes[uploadId]
+	if !ok {
+		newMutex := sync.Mutex{}
+		fh.uploadMutexes[uploadId] = &newMutex
+		mutex = &newMutex
+
+		fh.util.Log.Infof("New mutex created for upload ID %s", uploadId)
+	}
+
+	return mutex
+}
+
+// getUploadMutex retrieves the mutex associated with the upload ID.
+//
+// If the entry does not exist, then it will add the entry and return a new mutex.
+func (fh *FileHandler) getUploadMutex(uploadId string) *sync.Mutex {
+	mutex, ok := fh.uploadMutexes[uploadId]
+	if !ok {
+		return fh.addUploadMutex(uploadId)
+	}
+
+	return mutex
+}
+
+// clearMutext clears the entry of a given upload ID from the
 // mutex map.
 //
-// If the request ID does not exist, then it will do nothing.
-func (fh *FileHandler) clearMutexEntry(uploadId string) {
-	_, ok := fh.reqMutexes[uploadId]
+// If the upload ID does not exist, then it will do nothing.
+func (fh *FileHandler) clearMutex(uploadId string) {
+	_, ok := fh.uploadMutexes[uploadId]
 	if ok {
-		delete(fh.reqMutexes, uploadId)
-		fh.deps.Log.Infof("Cleared mutex for upload ID %s", uploadId)
+		delete(fh.uploadMutexes, uploadId)
+		fh.util.Log.Infof("Cleared mutex for upload ID %s", uploadId)
 	} else {
-		fh.deps.Log.Infof("No mutex entry found for upload ID %s", uploadId)
+		fh.util.Log.Infof("No mutex entry found for upload ID %s", uploadId)
 	}
 }
