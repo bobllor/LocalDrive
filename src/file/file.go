@@ -1,8 +1,10 @@
 package file
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -102,6 +104,91 @@ func Read(root string) ([]File, error) {
 	return fs, nil
 }
 
+// FlattenFiles flattens the a slice of File structs to prepare for use in
+// a query.
+func FlattenFile(files ...File) []any {
+	out := []any{}
+
+	appendFunc := func(v any) {
+		out = append(out, v)
+	}
+
+	for _, file := range files {
+		appendFunc(file.OwnerID)
+		appendFunc(file.Name)
+		appendFunc(file.Type)
+		appendFunc(file.FileID)
+		appendFunc(file.Extension)
+		appendFunc(file.ParentID)
+		appendFunc(file.Path)
+		appendFunc(file.Size)
+		appendFunc(file.ModifiedOn)
+		appendFunc(file.DeletedOn)
+	}
+
+	return out
+}
+
+// ToFileResponses converts a File slice into a FileResponse
+// slice.
+//
+// This is intended to be used for client responses to refrain
+// sending confidential fields.
+func ToFileResponses(files ...File) []FileResponse {
+	responses := []FileResponse{}
+
+	for _, file := range files {
+		responses = append(responses, *file.ToFileResponse())
+	}
+
+	return responses
+}
+
+// StringClean returns a clean string representation of File excluding secrets.
+// This does not include the account ID.
+//
+// The formatting is: "<key>=<val>;..."
+func (f *File) StringClean() string {
+	data := []string{}
+	write := func(key string, val any) {
+		data = append(data, fmt.Sprintf("%s=%v", key, val))
+	}
+
+	write(ColumnFileName, f.Name)
+	write(ColumnFileType, f.Type)
+	write(ColumnFileID, f.FileID)
+	write(ColumnFileExtension, f.Extension)
+	write(ColumnParentID, f.ParentID)
+	write(ColumnFileSize, f.Size)
+	write(ColumnModifiedOn, f.ModifiedOn.UTC().String())
+
+	var deletedOn any
+	if f.DeletedOn != nil {
+		deletedOn = f.DeletedOn.UTC().String()
+	}
+	write(ColumnDeletedOn, deletedOn)
+
+	return strings.Join(data, ";")
+}
+
+// ToFileResponse converts the File struct into a
+// FileResponse struct.
+//
+// This is intended to be used for client responses to refrain
+// sending confidential fields.
+func (f *File) ToFileResponse() *FileResponse {
+	return &FileResponse{
+		Name:       f.Name,
+		Type:       f.Type,
+		FileID:     f.FileID,
+		Extension:  f.Extension,
+		ParentID:   f.ParentID,
+		Size:       f.Size,
+		ModifiedOn: f.ModifiedOn,
+		DeletedOn:  f.DeletedOn,
+	}
+}
+
 // walk is used to traverse root and return a File slice for
 // all the files in root.
 //
@@ -168,62 +255,4 @@ func walk(root string) ([]File, error) {
 	}
 
 	return fs, nil
-}
-
-// FlattenFiles flattens the a slice of File structs to prepare for use in
-// a query.
-func FlattenFile(files ...File) []any {
-	out := []any{}
-
-	appendFunc := func(v any) {
-		out = append(out, v)
-	}
-
-	for _, file := range files {
-		appendFunc(file.OwnerID)
-		appendFunc(file.Name)
-		appendFunc(file.Type)
-		appendFunc(file.FileID)
-		appendFunc(file.Extension)
-		appendFunc(file.ParentID)
-		appendFunc(file.Path)
-		appendFunc(file.Size)
-		appendFunc(file.ModifiedOn)
-		appendFunc(file.DeletedOn)
-	}
-
-	return out
-}
-
-// ToFileResponses converts a File slice into a FileResponse
-// slice.
-//
-// This is intended to be used for client responses to refrain
-// sending confidential fields.
-func ToFileResponses(files ...File) []FileResponse {
-	responses := []FileResponse{}
-
-	for _, file := range files {
-		responses = append(responses, *file.ToFileResponse())
-	}
-
-	return responses
-}
-
-// ToFileResponse converts the File struct into a
-// FileResponse struct.
-//
-// This is intended to be used for client responses to refrain
-// sending confidential fields.
-func (f *File) ToFileResponse() *FileResponse {
-	return &FileResponse{
-		Name:       f.Name,
-		Type:       f.Type,
-		FileID:     f.FileID,
-		Extension:  f.Extension,
-		ParentID:   f.ParentID,
-		Size:       f.Size,
-		ModifiedOn: f.ModifiedOn,
-		DeletedOn:  f.DeletedOn,
-	}
 }
