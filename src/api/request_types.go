@@ -1,13 +1,24 @@
 package api
 
-// RequestUserLoginInfo is the request body containing the login information of the user.
+// RequestUserLoginInfo contains the login information of the user.
 type RequestUserLoginInfo struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
+// RequestUserRegisterInfo contains the login information of the user
+// for registering an account.
 type RequestUserRegisterInfo struct {
 	Username        string `json:"username"`
 	Password        string `json:"password"`
 	ConfirmPassword string `json:"confirmPassword"`
+}
+
+// RequestFileUploadInfo is used to hold metadata of the file being uploaded.
+type RequestFileUploadInfo struct {
+	FileName      string `json:"fileName"`
+	FileSize      int    `json:"fileSize"`
+	FileExtension string `json:"fileExtension"`
+	FileParentId  string `json:"fileParentId"`
+	TotalChunks   int    `json:"totalChunks"`
 }
