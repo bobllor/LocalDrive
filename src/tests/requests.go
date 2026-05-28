@@ -2,6 +2,7 @@ package tests
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 )
@@ -26,4 +27,17 @@ func GetCookie(sessionCookieName string) *http.Cookie {
 		Name:  sessionCookieName,
 		Value: DbRowInfo.SessionID,
 	}
+}
+
+// NewRequestBody creates a new request body.
+// It marshals v and returns the Reader of v.
+func NewRequestBody(v any) (io.Reader, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+
+	buf := bytes.NewBuffer(b)
+
+	return buf, nil
 }
