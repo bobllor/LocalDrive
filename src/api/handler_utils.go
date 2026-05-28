@@ -68,7 +68,7 @@ func (u *Utility) HttpWriteCustomBadDataError(w http.ResponseWriter, errMsg stri
 	WriteErrorResponse(w, errMsg, http.StatusBadRequest, reason)
 }
 
-// HttpWriteCustomBadDataErrorf writes a bad data error to the ResponseWriter with modications
+// HttpWriteCustomBadDataErrorf writes a bad data error to the ResponseWriter with modifications
 // on the client error message and the reason code.
 //
 // It logs at the WARN level.
