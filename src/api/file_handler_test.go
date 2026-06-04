@@ -396,4 +396,14 @@ func TestCompleteUploadFile(t *testing.T) {
 	t.Cleanup(func() {
 		dbgateway.DropRows(db, file.TableName, file.ColumnFileID, apres.Output.FileID)
 	})
+
+	fi, err := ap.gateway.File.GetFile(tests.DbRowInfo.AccountID, apres.Output.FileID)
+	assert.Nil(t, err)
+
+	fiPath := filepath.Join(gw.Dir.Storage, fi.Path)
+
+	stat, err := os.Stat(fiPath)
+	assert.Nil(t, err)
+
+	assert.Equal(t, stat.Name(), fi.FileID)
 }

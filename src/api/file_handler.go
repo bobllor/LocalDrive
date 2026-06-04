@@ -294,7 +294,8 @@ func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
 // an extension does not exist, then it will be a generic file.
 //
 // If the upload ID does not exist, the total chunks doesn't match the written chunks,
-// or missing/invalid headers, then the request will be rejected.
+// missing/invalid headers, or any general file writing errors, then the request will be rejected.
+// The file will be removed from the storage.
 //
 // Upon a successful upload, it will return a FileResponse response.
 //
