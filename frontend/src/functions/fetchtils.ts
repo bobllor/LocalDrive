@@ -21,7 +21,7 @@ export async function validateSession(): Promise<boolean>{
  * Sends a request to the given path and returns its response.
  * If args are used, it will send the data with args.
  * 
- * An error can occur in the call, and must be caught.
+ * An error can occur in the call and must be caught.
  * 
  * @param path The non-base request URL, this can include the forward slash
  * @param method The method used on the request, by default it uses GET
@@ -44,10 +44,7 @@ export async function fetchApi<T>(path: string, method: Method = "GET", data?: {
     const r: ResponseApi<T> = await res.json()
 
     // TODO: proper log, output is not logged
-    console.debug(`Response status: ${r.status}`);
-    if(r.status == "error"){
-        throw r;
-    }
+    console.debug(`Response status: ${r.status} | OK: ${res.ok}`);
 
     return r;
 }
