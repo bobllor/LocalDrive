@@ -1,8 +1,8 @@
 import type { JSX } from "react";
-import type { File } from "../../../context/FileStore";
+import type { FileResponse } from "../../../context/FileStore";
 import { useNavigate } from "react-router";
 import React from "react";
-import { useFileListStore } from "./file-list-display-files/FileListStore";
+import { useFileListStore } from "./storage-store/FileListStore";
 import { useShallow } from "zustand/shallow";
 import { createUrl } from "../../../server-utils";
 
@@ -129,9 +129,9 @@ type TableHeadObj = {
 }
 
 type FileListDisplayProps = {
-    files: Array<File>,
+    files: Array<FileResponse>,
 }
 
 type FileObjProps = {
-    fileObj: File,
+    fileObj: FileResponse,
 }
