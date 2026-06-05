@@ -2,7 +2,7 @@ import type { JSX } from "react";
 import type { FileResponse } from "../../../context/FileStore";
 import { useNavigate } from "react-router";
 import React from "react";
-import { useFileListStore } from "./storage-store/FileListStore";
+import { useFileListStore } from "./store/FileListStore";
 import { useShallow } from "zustand/shallow";
 import { createUrl } from "../../../server-utils";
 
