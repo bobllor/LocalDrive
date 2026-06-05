@@ -6,6 +6,7 @@ import (
 	"time"
 
 	dbcon "github.com/bobllor/cloud-project/src/db_gateway"
+	"github.com/bobllor/cloud-project/src/utils"
 	"github.com/bobllor/gologger"
 	"github.com/google/uuid"
 )
@@ -117,7 +118,7 @@ func (ah *ApiHandler) middlewareHandler(f func(http.ResponseWriter, *http.Reques
 		startTime := time.Now()
 		requestID := uuid.New().String()
 
-		ah.log.Infof("Starting new request | id=%s,method=%s", requestID, r.Method)
+		ah.log.Infof("Starting new request | date=%s,id=%s,method=%s", utils.FormatTime(startTime), requestID, r.Method)
 		ah.log.Infof("%s: accessed on agent %s", r.RemoteAddr, r.UserAgent())
 
 		r = ah.writeContext(r, CONTEXT_REQUEST_ID_KEY, requestID)
@@ -128,7 +129,8 @@ func (ah *ApiHandler) middlewareHandler(f func(http.ResponseWriter, *http.Reques
 
 		finalTime := time.Since(startTime)
 		ah.log.Infof(
-			"Completed request | id=%s,time=%v seconds",
+			"Completed request | date=%s,id=%s,time=%v seconds",
+			utils.FormatTime(startTime),
 			requestID,
 			finalTime.Seconds(),
 		)
