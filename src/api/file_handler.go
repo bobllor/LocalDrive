@@ -21,11 +21,12 @@ import (
 
 const (
 	FileGetFileRootRoute            = "GET /api/storage"
+	FileGetFileParentRoute          = "GET /api/storage/folder/{parentId}"
 	FilePostUploadFileRoute         = "POST /api/upload"
 	FilePostUploadFileChunkRoute    = "POST /api/upload/{id}/{chunkIndex}"
 	FilePostUploadFileCompleteRoute = "POST /api/upload/{id}/complete"
 	FilePostDownloadFileRoute       = "GET /api/download/file/{fileId}"
-	FileGetFileParentRoute          = "GET /api/storage/folder/{parentId}"
+	FilePostAddFolderRoute          = "POST /api/folders/add"
 )
 
 const CHUNKS_DIR_NAME = "lcschunks"
@@ -420,6 +421,56 @@ func (fh *FileHandler) UploadFileComplete(w http.ResponseWriter, r *http.Request
 	delete(fh.uploadSessions, uploadId)
 	// TODO: this will probably need a lock, research it.
 	fh.removeFiles(chunkPathsToRemove...)
+}
+
+// PostAddFolder adds a folder to a user. It uses a response body containing
+// the folder name and folder's parent ID. The body will contain the
+// FileResponse struct for use on the front end immediately after the call ends.
+//
+// Folders are only metadata, no physical files are created.
+//
+// Auth middleware is required.
+func (fh *FileHandler) PostAddFolder(w http.ResponseWriter, r *http.Request) {
+	usr, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
+	if !ok {
+		fh.util.HttpWriteUnauthorizedError(w, r)
+		return
+	}
+
+	var folderReqBody RequestAddFolderInfo
+	err := json.NewDecoder(r.Body).Decode(&folderReqBody)
+	if err != nil {
+		fh.util.HttpWriteBadDataError(w, "Failed to parse request body: %v", err)
+		return
+	}
+	defer r.Body.Close()
+
+	// folders are not written to the disk
+	folderFile := file.NewFile(
+		usr.AccountId,
+		folderReqBody.Name,
+		file.FileTypeDir,
+		"",
+		"",
+		0,
+		folderReqBody.ParentId,
+	)
+
+	dbErr := fh.gateway.File.AddFile(folderFile)
+	if dbErr != nil {
+		fh.util.HttpWriteInternalError(w, "Failed to add new folder to database: %v", err)
+		return
+	}
+
+	fh.util.Log.Infof("Created folder '%s' (id=%s)", folderFile.Name, folderFile.FileID)
+
+	n, err := WriteResponse(w, NewApiResponse(folderFile.ToFileResponse()))
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "Failed to write response: %v", err)
+		return
+	}
+
+	fh.util.Log.Infof("Wrote %d bytes to response body", n)
 }
 
 // GetFiles retrieves a slice of Files based on the account ID and the given
