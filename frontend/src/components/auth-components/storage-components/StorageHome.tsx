@@ -1,12 +1,11 @@
 import { useEffect, useState, type JSX } from "react";
-import { useLoaderData, useNavigate, useParams } from "react-router";
-import { type User } from "../../../middleware";
+import { useNavigate, useParams } from "react-router";
 import { fetchApi } from "../../../functions/fetchtils";
-import { useFileStore, type File } from "../../../context/FileStore";
+import { useFileStore, type FileResponse } from "../../../context/FileStore";
 import FileListDisplay from "./FileListDisplay";
+import FileOpButton from "./file-ops-components/FileOpButton";
 
 export default function StorageHome(): JSX.Element{
-    const loaderData = useLoaderData<User>();
     const navigate = useNavigate();
 
     const files = useFileDisplay();
@@ -34,6 +33,7 @@ export default function StorageHome(): JSX.Element{
     return (
         <>
             <div className="flex flex-col justify-center items-center gap-1">
+                <FileOpButton />
                 <button onClick={logout} className="border w-fit h-fit py-2 px-4">Logout</button>
                 <div className="border w-full">
                     <FileListDisplay files={files} />
@@ -43,12 +43,12 @@ export default function StorageHome(): JSX.Element{
     )
 }
 
-function useFileDisplay(): Array<File>{
+function useFileDisplay(): Array<FileResponse>{
     // :folderId param, will be either empty or with the route folder/:folderId
     let params = useParams();
 
     const {setFiles, getFiles} = useFileStore();
-    const [files, setFilesState] = useState<Array<File>>([]);
+    const [files, setFilesState] = useState<Array<FileResponse>>([]);
 
     useEffect(() => {
         setFiles(params.folderId).then(() => {
