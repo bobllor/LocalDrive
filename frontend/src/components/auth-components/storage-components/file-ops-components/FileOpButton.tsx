@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState, type JSX } from "react";
-import { useParams } from "react-router";
 import type { SetBlurFunc } from "../../../ui/BackgroundBlur";
 
 type FileOpButtonProps = {
