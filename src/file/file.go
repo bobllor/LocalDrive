@@ -90,6 +90,31 @@ type FileResponse struct {
 	DeletedOn  *time.Time `json:"deletedOn"`
 }
 
+// NewFile creates a new File with the file ID, modified date,
+// and deleted date having their values handled in the constructor.
+func NewFile(accountId string,
+	fileName string,
+	fileType FileType,
+	fileExt string,
+	filePath string,
+	fileSize int64,
+	parentId *string) File {
+	id := uuid.NewString()
+
+	return File{
+		OwnerID:    accountId,
+		Name:       fileName,
+		Type:       fileType,
+		FileID:     id,
+		Extension:  fileExt,
+		ParentID:   parentId,
+		Path:       filePath,
+		Size:       fileSize,
+		ModifiedOn: time.Now().UTC(),
+		DeletedOn:  nil,
+	}
+}
+
 // Read returns a File slice for all files found in root.
 // An error will be returned if there is an issue while reading root.
 //
