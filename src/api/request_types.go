@@ -22,3 +22,10 @@ type RequestFileUploadInfo struct {
 	FileParentId  string `json:"fileParentId"`
 	TotalChunks   int    `json:"totalChunks"`
 }
+
+// RequestAddFolderInfo contains the request body for adding a folder to the
+// database and organization of files for the front end.
+type RequestAddFolderInfo struct {
+	Name     string  `json:"fileName"`
+	ParentId *string `json:"parentId"`
+}
