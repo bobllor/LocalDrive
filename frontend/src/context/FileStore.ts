@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { fetchApi } from "../functions/fetchtils";
 
 type FileStore = {
-    files: Record<string, Array<File>>,
+    files: Record<string, Array<FileResponse>>,
     /**
      * Sets the contents of the files based on the parentID. If the parentID already
      * has an entry, then this will do nothing.
@@ -16,14 +16,14 @@ type FileStore = {
      * @param parentID The parentID of the files, this can be null indicating it is the root folder
      * @returns The array of the files related to the parentID
      */
-    getFiles: (parentID?: string) => Array<File>,
+    getFiles: (parentID?: string) => Array<FileResponse>,
 }
 
 /**
  * The type representing the File data of the database.
- * This does not include the file path.
+ * This does not include the file path or account owner.
  */
-export type File = {
+export type FileResponse = {
     accountID: string
     fileName: string
     fileType: string
@@ -51,9 +51,9 @@ export const useFileStore = create<FileStore>((set, get) => ({
         }
 
         try{
-            const newFiles = await fetchApi<Array<File>>(route);
+            const newFiles = await fetchApi<Array<FileResponse>>(route);
 
-            const newObj: Record<string, File[]> = {};
+            const newObj: Record<string, FileResponse[]> = {};
             newObj[key] = newFiles.output;
 
             set(state => ({state, files: {...state.files, ...newObj}}));
