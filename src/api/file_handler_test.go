@@ -407,3 +407,51 @@ func TestCompleteUploadFile(t *testing.T) {
 
 	assert.Equal(t, stat.Name(), fi.FileID)
 }
+
+func TestAddFolder(t *testing.T) {
+	gw, db := dbgateway.NewTestGatewayDB(t)
+	ap := NewApiHandler(gw, tests.NewTestLogger())
+
+	mux := http.NewServeMux()
+
+	mux.Handle(FilePostAddFolderRoute, ap.CreateAuthMiddleware(ap.FileHandler.PostAddFolder))
+	serv := httptest.NewServer(mux)
+
+	tc := serv.Client()
+	defer serv.Close()
+
+	folderName := "very secret folder"
+	var folderParent *string
+
+	reqData := RequestAddFolderInfo{
+		Name:     folderName,
+		ParentId: folderParent,
+	}
+	reqBody, err := json.Marshal(reqData)
+	assert.Nil(t, err)
+
+	req, err := tests.NewRequest("POST", serv.URL+"/api/folders/add", bytes.NewBuffer(reqBody))
+	assert.Nil(t, err)
+
+	req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+	res, err := tc.Do(req)
+	assert.Nil(t, err)
+	assert.True(t, res.StatusCode < 400)
+	defer res.Body.Close()
+
+	var apires ApiResponse[file.FileResponse]
+	err = json.NewDecoder(res.Body).Decode(&apires)
+	assert.Nil(t, err)
+	assert.Equal(t, apires.Status, StatusSuccess)
+
+	fileRes := apires.Output
+	t.Cleanup(func() {
+		dbgateway.DropRows(db, file.TableName, file.ColumnFileID, fileRes.FileID)
+	})
+
+	af, err := ap.gateway.File.GetFile(tests.DbRowInfo.AccountID, fileRes.FileID)
+	assert.Nil(t, err)
+	assert.NotNil(t, af)
+	assert.TrueAll(t, af.Name == fileRes.Name, af.FileID == fileRes.FileID, af.Type == fileRes.Type)
+}
