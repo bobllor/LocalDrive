@@ -1,22 +1,37 @@
 import { create } from "zustand";
 import { fetchApi } from "../functions/fetchtils";
+import type { ResponseApi, ResponseStatus } from "../response-types";
 
 type FileStore = {
-    files: Record<string, Array<FileResponse>>,
     /**
-     * Sets the contents of the files based on the parentID. If the parentID already
+     * A map of parent IDs and their files.
+     */
+    files: Record<string, Array<FileResponse>>
+    /**
+     * Sets the contents of the files based on the parent ID. If the parent ID already
      * has an entry, then this will do nothing.
      * 
      * An error can occur and will return a ResponseApi error.
-     * @param parentID 
+     * @param parentId
      */
-    setFiles: (parentID?: string) => Promise<void>,
+    setFiles: (parentId?: string) => Promise<void>
     /**
-     * Retrieves the files based on the parentID.
-     * @param parentID The parentID of the files, this can be null indicating it is the root folder
+     * Retrieves the files based on the parent ID.
+     * @param parentId The parent ID of the files, this can be null indicating it is the root folder
      * @returns The array of the files related to the parentID
      */
-    getFiles: (parentID?: string) => Array<FileResponse>,
+    getFiles: (parentId?: string) => Array<FileResponse>
+    /**
+     * Adds a new folder to the database. Upon a successful request, it will update
+     * the file state of the parent ID.
+     * 
+     * It will return a success or error depending on the API response.
+     * 
+     * @param folderName The folder name
+     * @param parentId The parent ID the folder resides in, it is optional
+     * @returns 
+     */
+    addFolder: (folderName: string, parentId?: string) => Promise<ResponseStatus>,
 }
 
 /**
@@ -24,10 +39,10 @@ type FileStore = {
  * This does not include the file path or account owner.
  */
 export type FileResponse = {
-    accountID: string
     fileName: string
     fileType: string
     fileID: string
+    extension: string
     parentID: string
     fileSize: number
     modifiedOn: Date
@@ -38,9 +53,9 @@ const ROOT_KEY = "root";
 
 export const useFileStore = create<FileStore>((set, get) => ({
     files: {},
-    setFiles: async (parentID?: string) => {
-        const key = parentID ? parentID : ROOT_KEY;
-        const route = parentID ? `/api/storage/folder/${key}` : "/api/storage";
+    setFiles: async (parentId ?: string) => {
+        const key = getParentIdUndefined(parentId);
+        const route = parentId ? `/api/storage/folder/${key}` : "/api/storage";
         const baseFiles = get().files;
 
         // will not update the state if it already exists
@@ -56,20 +71,50 @@ export const useFileStore = create<FileStore>((set, get) => ({
             const newObj: Record<string, FileResponse[]> = {};
             newObj[key] = newFiles.output;
 
-            set(state => ({state, files: {...state.files, ...newObj}}));
+            set(state => ({...state, files: {...state.files, ...newObj}}));
             // TODO: remove this or something idk
             console.debug(`New file store size: ${Object.keys(get().files).length}`);
         }catch(e){
             throw e;
         }
     },
-    updateFiles: () => {},
-    getFiles: (parentID?: string) => {
+    getFiles: (parentId?: string) => {
         // TODO: log properly
         const files = get().files;
-        const key = parentID ? parentID : ROOT_KEY;
+        const key = getParentIdUndefined(parentId);
         console.debug(`Parent ID: ${key}`);
 
         return files[key];
-    }
+    },
+    addFolder: async (folderName: string, parentId?: string) => {
+        const reqBody = {
+            fileName: folderName,
+            parentId: parentId,
+        }
+
+        const res: ResponseApi<FileResponse> = await fetchApi<FileResponse>("/api/folders/add", "POST", reqBody);
+        console.log("Add folder response:", res);
+
+        if(res.status == "success"){
+            const key = getParentIdUndefined(parentId);
+            const files = get().getFiles(parentId).map(v => v);
+
+            files.push(res.output);
+
+            set(st => ({...st, files: {...st.files, [key]: files}}));
+        }
+
+        return res.status;
+    },
 }));
+
+/**
+ * Checks the parent ID and returns the parent ID if it is not undefined, otherwise
+ * it will return the default root key value.
+ * 
+ * @param parentId A string representing the parent ID, this can be undefined
+ * @returns 
+ */
+function getParentIdUndefined(parentId?: string): string{
+    return parentId ? parentId : ROOT_KEY;
+}
