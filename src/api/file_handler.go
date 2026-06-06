@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	dbgateway "github.com/bobllor/cloud-project/src/db_gateway"
 	"github.com/bobllor/cloud-project/src/file"
+	"github.com/bobllor/cloud-project/src/utils"
 	"github.com/bobllor/gologger"
 	"github.com/google/uuid"
 )
@@ -59,19 +59,7 @@ type chunkInfo struct {
 	// uploads.
 	Dir string
 
-	// FileSize is the size of the file in bytes.
-	FileSize int
-
-	// FileName is the name of the file being uploaded.
-	FileName string
-
-	// FileExtension is the extension of the file. This can be an empty string, indicating a generic
-	// file.
-	FileExtension string
-
-	// FileParentId is the parent ID the file is a child of. This can be an empty string,
-	// indicating it is a root file.
-	FileParentId string
+	FileInfo file.File
 
 	// ChunkIndexes is a map of indexes used to track the chunks. The value
 	// is the absolute path to the written chunk.
@@ -155,10 +143,15 @@ func (fh *FileHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 }
 
 // UploadGenerateId generates an upload session ID for use by the client in uploading files.
+// The file metadata is also added to the database upon success.
 //
 // This requires the auth middleware.
 func (fh *FileHandler) UploadGenerateId(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
+	userContext, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
+	if !ok {
+		fh.util.HttpWriteUnauthorizedError(w, r)
+		return
+	}
 
 	uploadId := uuid.NewString()
 
@@ -168,6 +161,8 @@ func (fh *FileHandler) UploadGenerateId(w http.ResponseWriter, r *http.Request) 
 		fh.util.HttpWriteBadDataError(w, "Failed to decode request body for upload ID generation: %v", err)
 		return
 	}
+	defer r.Body.Close()
+
 	badData := []string{}
 	if strings.TrimSpace(meta.FileName) == "" {
 		badData = append(badData, "file name cannot be empty")
@@ -182,13 +177,37 @@ func (fh *FileHandler) UploadGenerateId(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	fileId := uuid.NewString()
+	fh.util.Log.Debugf("Generated file ID: %s", fileId)
+	filePath := filepath.Join(userContext.AccountId, fileId)
+
+	fileEntry := file.File{
+		OwnerID:   userContext.AccountId,
+		Name:      meta.FileName,
+		Extension: meta.FileExtension,
+		// will never be a directory, files are flattened in the storage
+		// directories are added in a different handler
+		Type:       file.FileTypeFile,
+		Size:       int64(meta.FileSize),
+		FileID:     fileId,
+		ModifiedOn: utils.NowUTC(),
+		ParentID:   meta.FileParentId,
+		Path:       filePath,
+		DeletedOn:  nil,
+	}
+
+	fh.util.Log.Debugf("File entry (clean): %s", fileEntry.StringClean())
+
+	err = fh.gateway.File.AddFile(fileEntry)
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "Failed to add file to database: %v", err)
+		return
+	}
+
 	fh.uploadSessions[uploadId] = chunkInfo{
-		FileSize:      meta.FileSize,
-		TotalChunks:   meta.TotalChunks,
-		FileName:      meta.FileName,
-		FileExtension: meta.FileExtension,
-		FileParentId:  meta.FileParentId,
-		ChunkIndexes:  make(map[int]string),
+		TotalChunks:  meta.TotalChunks,
+		FileInfo:     fileEntry,
+		ChunkIndexes: make(map[int]string),
 	}
 	fh.util.Log.Infof("New chunk info created for %s, total chunks: %d", uploadId, meta.TotalChunks)
 
@@ -330,9 +349,7 @@ func (fh *FileHandler) UploadFileComplete(w http.ResponseWriter, r *http.Request
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 		return
 	}
-	fileId := uuid.NewString()
-	fh.util.Log.Debugf("Generated file ID: %s", fileId)
-	storedFilePath := filepath.Join(accountDir, fileId)
+	storedFilePath := filepath.Join(accountDir, cinfo.FileInfo.FileID)
 	fh.util.Log.Debugf("File path: %s", storedFilePath)
 
 	sf, err := os.Create(storedFilePath)
@@ -386,33 +403,7 @@ func (fh *FileHandler) UploadFileComplete(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	parent, base := filepath.Split(storedFilePath)
-	// file path stored in the database is relative: <account_id>/<file_id>
-	fileEntryPath := filepath.Join(filepath.Base(parent), base)
-
-	fileEntry := file.File{
-		OwnerID:   userContext.AccountId,
-		Name:      cinfo.FileName,
-		Extension: cinfo.FileExtension,
-		// will never be a directory, files are flattened in the storage
-		Type:       file.FileTypeFile,
-		Size:       int64(cinfo.FileSize),
-		FileID:     fileId,
-		ModifiedOn: time.Now().UTC(),
-		ParentID:   &cinfo.FileParentId,
-		Path:       fileEntryPath,
-	}
-
-	fh.util.Log.Debugf("File entry: %s", fileEntry.StringClean())
-
-	err = fh.gateway.File.AddFile(fileEntry)
-	if err != nil {
-		fh.removeFile(sf.Name())
-		fh.util.HttpWriteInternalError(w, "Failed to add file to database: %v", err)
-		return
-	}
-
-	fileRes := fileEntry.ToFileResponse()
+	fileRes := cinfo.FileInfo.ToFileResponse()
 
 	WriteResponse(w, NewApiResponse(fileRes))
 
@@ -445,6 +436,8 @@ func (fh *FileHandler) PostAddFolder(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
+	fh.util.Log.Debugf("Request body: %v", folderReqBody)
+
 	// folders are not written to the disk
 	folderFile := file.NewFile(
 		usr.AccountId,
@@ -462,7 +455,12 @@ func (fh *FileHandler) PostAddFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fh.util.Log.Infof("Created folder '%s' (id=%s)", folderFile.Name, folderFile.FileID)
+	folderParent := "root"
+	if folderReqBody.ParentId != nil {
+		folderParent = *folderReqBody.ParentId
+	}
+
+	fh.util.Log.Infof("Created folder '%s' (parentId=%s,id=%s)", folderFile.Name, folderParent, folderFile.FileID)
 
 	n, err := WriteResponse(w, NewApiResponse(folderFile.ToFileResponse()))
 	if err != nil {
@@ -515,8 +513,9 @@ func (fh *FileHandler) GetFiles(w http.ResponseWriter, r *http.Request) {
 	fh.util.Log.Debugf("Response bytes: %d", n)
 }
 
-// mkAccountDir creates the directory of the account ID. It will return the directory path upon
-// creation or if it already exists.
+// mkAccountDir creates the directory of the account ID in the storage folder.
+//
+// It will return the directory path upon creation or if it already exists.
 func (fh *FileHandler) mkAccountDir(accountId string) (string, error) {
 	path := filepath.Join(fh.gateway.Dir.Storage, accountId)
 
