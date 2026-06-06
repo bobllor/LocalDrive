@@ -1,31 +1,43 @@
-import type { JSX } from "react";
-import type { FileResponse } from "../../../../context/FileStore";
-import { fetchApi } from "../../../../functions/fetchtils";
-import type { ResponseApi } from "../../../../response-types";
+import { type JSX } from "react";
 import type { SetBlurFunc } from "../../../ui/BackgroundBlur";
+import ModalBase from "../../../ui/ModalBase";
+import type React from "react";
+import { useParams } from "react-router";
+import { useFileStore } from "../../../../context/FileStore";
 
 type AddFolderOpProps = {
-    setBlur: SetBlurFunc
+    onClose: SetBlurFunc
 }
 
-export default function AddFolderOp({setBlur}: AddFolderOpProps): JSX.Element{
-    return (
-        <div className="bg-white w-10 h-10">
+const INPUT_NAME = "folder-input-field"
 
-        </div>
-    )
-}
+export default function AddFolderOp({onClose}: AddFolderOpProps): JSX.Element{
+    const params = useParams();
+    const addFolder = useFileStore(st => st.addFolder);
 
-/**
- * Adds a folder. 
- * 
- * The response will return a FileResponse object.
- */
-async function addFolder(fileName: string, parentId?: string){
-    const reqBody = {
-        fileName: fileName,
-        parentId: parentId,
+    const onFormSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
+        e.preventDefault();
+
+        try{
+            const data = new FormData(e.currentTarget);
+            const folderValue = data.get(INPUT_NAME) as string;
+
+            const status = await addFolder(folderValue, params.folderId);
+
+            console.log(status);
+        }finally{
+            onClose(false);
+        }
     }
 
-    const res: ResponseApi<FileResponse> = await fetchApi("/api/folders/add", "POST", reqBody);
+    return (
+        <ModalBase>
+            <div>
+                <form
+                onSubmit={onFormSubmit}>
+                    <input type="text" className="border" name={INPUT_NAME} autoComplete="off" />
+                </form>
+            </div>
+        </ModalBase>        
+    )
 }

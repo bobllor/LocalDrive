@@ -8,10 +8,10 @@ type FileOpButtonProps = {
 
 type MenuButton = {
     text: string
-    onClickFunc: (...args: any) => void,
+    onClickFunc: (op: FileOperation) => void,
 }
 
-export type FileOperation = null | "addFolder"
+export type FileOperation = null | "addFolder";
 
 /**
  * Used to open the context menu to perform different file operations.
@@ -20,11 +20,11 @@ export type FileOperation = null | "addFolder"
 export default function FileOpButton({setBlur, setFileOp}: FileOpButtonProps): JSX.Element{
     const [revealMenu, setRevealMenu] = useState(false);
     const menuDivRef = useRef(null);
-
+    
     const MENU_BUTTONS_REF = useRef<Array<MenuButton>>([
         {
             text: "New folder",
-            onClickFunc: () => {setFileOp("addFolder")},
+            onClickFunc: (op: FileOperation) => setFileOp(op),
         },
     ]);
 
@@ -38,9 +38,9 @@ export default function FileOpButton({setBlur, setFileOp}: FileOpButtonProps): J
      * 
      * @param f 
      */
-    const hideMenuWrapper = (f: MenuButton["onClickFunc"], ...args: any) => {
+    const hideMenuWrapper = (f: MenuButton["onClickFunc"], op: FileOperation) => {
         try{
-            f(...args);
+            f(op);
         }finally{
             setRevealMenu(false);
             setBlur(true);
@@ -56,7 +56,7 @@ export default function FileOpButton({setBlur, setFileOp}: FileOpButtonProps): J
                     {MENU_BUTTONS_REF.current.map((btn) => (
                         <button
                         className="w-full hover:bg-gray-400/50"
-                        onClick={() => hideMenuWrapper(btn.onClickFunc)}>
+                        onClick={() => hideMenuWrapper(btn.onClickFunc, "addFolder")}>
                             {btn.text}
                         </button>
                     ))} 
