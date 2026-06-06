@@ -158,6 +158,7 @@ func (f *FileGateway) AddFile(files ...file.File) error {
 		return SqlErr
 	}
 
+	f.deps.Log.Infof("Added %d files", len(files))
 	logResultRows(f.deps.Log, res)
 
 	return nil
