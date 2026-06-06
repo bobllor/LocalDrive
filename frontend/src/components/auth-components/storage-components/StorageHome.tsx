@@ -6,6 +6,7 @@ import FileListDisplay from "./FileListDisplay";
 import FileOpButton, { type FileOperation } from "./file-ops-components/FileOpButton";
 import BackgroundBlur from "../../ui/BackgroundBlur";
 import AddFolderOp from "./file-ops-components/AddFolderOp";
+import ModalBase from "../../ui/ModalBase";
 
 export default function StorageHome(): JSX.Element{
     /**
@@ -34,18 +35,28 @@ export default function StorageHome(): JSX.Element{
     const [showBlur, setShowBlur] = useState(false);
     const [fileOp, setFileOp] = useState<FileOperation>(null);
 
+    /**
+     * Closes the background blur.
+     */
+    const onClose = () => setShowBlur(false);
+
     return (
         <>
             {showBlur &&
                 <BackgroundBlur setBlur={setShowBlur}>
-                    {fileOp == "addFolder" && <AddFolderOp setBlur={setShowBlur} />}
+                    <ModalBase>
+                        {fileOp == "addFolder" && <AddFolderOp onClose={onClose} />}
+                    </ModalBase>
                 </BackgroundBlur>
             }
             <div className="flex flex-col justify-center items-center gap-1">
                 <FileOpButton setBlur={setShowBlur} setFileOp={setFileOp} />
                 <button onClick={logout} className="border w-fit h-fit py-2 px-4">Logout</button>
                 <div className="border w-full">
-                    <FileListDisplay files={files} />
+                    {files !== undefined
+                    ? <FileListDisplay files={files} />
+                    : <div>Loading...</div>
+                    }
                 </div>
             </div> 
         </>
@@ -63,16 +74,10 @@ function useFileDisplay(): Array<FileResponse>{
     let params = useParams();
 
     const {setFiles, getFiles} = useFileStore();
-    const [files, setFilesState] = useState<Array<FileResponse>>([]);
+    const files = getFiles(params.folderId);
 
     useEffect(() => {
-        setFiles(params.folderId).then(() => {
-            setFilesState(getFiles(params.folderId));
-        }).catch((e) => {
-            // TODO: log proper
-            // will need to redirect this
-            console.error(e, "an error occurred");
-        })
+        setFiles(params.folderId);
     }, [params.folderId]);
 
     return files;
