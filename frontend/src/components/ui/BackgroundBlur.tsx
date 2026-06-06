@@ -3,7 +3,7 @@ import React, { useEffect, useRef, type JSX, type RefObject } from "react";
 /**
  * A callback function used to set the state of the background blur.
  * 
- * @param st The state to set the render condition
+ * @param st The boolean state to set the render condition
  * @returns 
  */
 export type SetBlurFunc = (st: boolean) => void;
