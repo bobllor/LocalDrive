@@ -13,6 +13,10 @@ type FileListStore = {
     clearFileIds: () => void,
 }
 
+/**
+ * The store context for handling files on the UI. This is not used for
+ * the file display and API calls with the files.
+ */
 export const useFileListStore = create<FileListStore>((set, get) => ({
     selectedFileIds: new Set<string>(),
     addFileId: (id: string) => {
