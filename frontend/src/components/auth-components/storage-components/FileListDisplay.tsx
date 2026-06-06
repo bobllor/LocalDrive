@@ -6,6 +6,18 @@ import { useFileListStore } from "./store/FileListStore";
 import { useShallow } from "zustand/shallow";
 import { createUrl } from "../../../server-utils";
 
+type TableHeadObj = {
+    text: string,
+}
+
+type FileListDisplayProps = {
+    files: Array<FileResponse>,
+}
+
+type FileObjProps = {
+    fileObj: FileResponse,
+}
+
 const THEAD_ELEMENTS: Array<TableHeadObj> = [
     {
         text: "Name",
@@ -74,7 +86,7 @@ function FileTableRow({fileObj}: FileObjProps): JSX.Element{
         }}
         onDoubleClick={() => {
             if(fileObj.fileType == "dir"){
-                navigate(`folder/${fileObj.fileID}`); 
+                navigate(`/storage/folder/${fileObj.fileID}`); 
             }
         }}
         className={`select-none ${selectedFileIds.has(fileObj.fileID) ? "bg-blue-400/60 hover:bg-blue-400/80" : hoverCss}`}>
@@ -122,16 +134,4 @@ function downloadFile(fileId: string): void{
 
     a.click();
     document.body.removeChild(a);
-}
-
-type TableHeadObj = {
-    text: string,
-}
-
-type FileListDisplayProps = {
-    files: Array<FileResponse>,
-}
-
-type FileObjProps = {
-    fileObj: FileResponse,
 }
