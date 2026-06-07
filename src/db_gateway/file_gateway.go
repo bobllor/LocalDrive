@@ -17,7 +17,8 @@ var (
 	// Any errors related to SQL, such as building or querying.
 	SqlErr = errors.New("an error occurred on the database server")
 	// ServerErr that represents an error on the server.
-	ServerErr = errors.New("an error occured on the server")
+	ServerErr     = errors.New("an error occured on the server")
+	UniqueFileErr = errors.New("file already exists, file must be unique")
 )
 
 // NewFileGateway creates a new FileGateway for database related options.
@@ -308,6 +309,76 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 	}
 
 	return files, nil
+}
+
+// validateAddFile queries the database with File properties to ensure it is unique.
+//
+// It will check the file name, file extension, file type, and the parent ID.
+// Uniqueness is dependent on if an existing file already exists with the
+// same parent ID and the four properties match.
+//
+// Directory files do not need to be validated.
+func (f *FileGateway) validateAddFile(fi file.File) error {
+	if fi.Type == file.FileTypeDir {
+		return nil
+	}
+
+	args := []any{
+		fi.OwnerID,
+		fi.Name,
+		fi.Extension,
+		fi.Type,
+	}
+
+	parentIDCondition := "IS NULL"
+	if fi.ParentID != nil {
+		parentIDCondition = "= ?"
+		args = append(args, *fi.ParentID)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM %s
+		WHERE %s = ?
+			AND %s = ?
+			AND %s = ?
+			AND %s = ?
+			AND %s %s`,
+		file.TableName,
+		file.ColumnFileOwnerID,
+		file.ColumnFileName,
+		file.ColumnFileExtension,
+		file.ColumnFileType,
+		file.ColumnParentID, parentIDCondition,
+	)
+
+	rows, err := f.database.Query(query, args...)
+	if err != nil {
+		f.deps.Log.Criticalf("Failed to query database: %v | Query: %s", err, query)
+		return SqlErr
+	}
+
+	type Counter struct{ Count int }
+	count := Counter{}
+	err = SelectRow(rows, &count)
+	if err != nil {
+		f.deps.Log.Criticalf("Failed to retrieve rows with query: %v", err)
+		return SqlErr
+	}
+
+	if count.Count > 0 {
+		f.deps.Log.Warnf(
+			"File %s failed unique condition (ext=%s,type=%s,parentId=%s)",
+			fi.Name,
+			fi.Extension,
+			fi.Type,
+			fi.ParentIdString(),
+		)
+
+		return UniqueFileErr
+	}
+
+	return nil
 }
 
 // validateFileExists checks if the folder ID has the correct formatting and
