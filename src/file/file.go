@@ -219,6 +219,19 @@ func (f *File) ToFileResponse() *FileResponse {
 	}
 }
 
+// ParentIdString converts the parent ID to a string value.
+//
+// It handles nil values and will return the string nil if
+// the parent ID is nil.
+func (f *File) ParentIdString() string {
+	s := "nil"
+	if f.ParentID != nil {
+		s = *f.ParentID
+	}
+
+	return s
+}
+
 // walk is used to traverse root and return a File slice for
 // all the files in root.
 //
