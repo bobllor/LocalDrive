@@ -301,6 +301,66 @@ func TestRenameFileName(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+func TestValidateUniqueFile(t *testing.T) {
+	fg, err := getTestFileGateway()
+	assert.Nil(t, err)
+
+	type cases struct {
+		File          file.File
+		IsFail        bool
+		ReplaceParent string
+	}
+
+	fileCases := []cases{
+		{
+			File: file.File{
+				Name:      tests.DbRowInfo.FileName,
+				FileID:    "12435nonexistent",
+				Type:      file.FileTypeFile,
+				Extension: ".txt",
+				OwnerID:   tests.DbRowInfo.AccountID,
+				ParentID:  nil,
+			},
+			IsFail:        false,
+			ReplaceParent: "parentid234",
+		},
+		{
+			File: file.File{
+				Name:      tests.DbRowInfo.FileName,
+				FileID:    "12345nonexistent",
+				Type:      file.FileTypeFile,
+				Extension: ".txt",
+				OwnerID:   tests.DbRowInfo.AccountID,
+				ParentID:  nil,
+			},
+			IsFail: true,
+		},
+		{
+			File: file.File{
+				Name:      tests.DbRowInfo.FileName,
+				FileID:    "12345",
+				Type:      file.FileTypeDir,
+				Extension: "",
+				OwnerID:   tests.DbRowInfo.AccountID,
+				ParentID:  nil,
+			},
+			IsFail: false,
+		},
+	}
+
+	for _, fi := range fileCases {
+		if fi.ReplaceParent != "" {
+			fi.File.ParentID = &fi.ReplaceParent
+		}
+		err = fg.validateAddFile(fi.File)
+		if !fi.IsFail {
+			assert.Nil(t, err)
+		} else {
+			assert.NotNil(t, err)
+		}
+	}
+}
+
 // getFileDb gets the [FileGateway] for the test database.
 // If an error occurs, it will return an error.
 //
