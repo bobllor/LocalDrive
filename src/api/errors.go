@@ -9,6 +9,10 @@ var (
 	// requirements of a method when its consumed. This is a generic bad data request.
 	ReasonBadRequestData ReasonCode = "BAD_DATA"
 
+	// ReasonDuplicateData is used for bad request data that resulted in a duplicate
+	// SQL error.
+	ReasonDuplicateData ReasonCode = "DUPLICATE_DATA"
+
 	// ReasonFileDoesNotExist is used if the file does not have an entry in the database.
 	ReasonFileDoesNotExist ReasonCode = "FILE_DOES_NOT_EXIST"
 
