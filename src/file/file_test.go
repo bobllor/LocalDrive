@@ -58,10 +58,10 @@ func TestReadParentIdFolders(t *testing.T) {
 	}
 
 	for parentPath, file := range parentMap {
-		if file.ParentID != nil {
+		if file.ParentID != "" {
 			// if this fails, then the parent doesn't exist
 			// in the flat file map
-			idParentFile, ok := fileIdMap[*file.ParentID]
+			idParentFile, ok := fileIdMap[file.ParentID]
 			assert.True(t, ok)
 
 			// checks if the flat parent file is a directory
@@ -71,7 +71,7 @@ func TestReadParentIdFolders(t *testing.T) {
 			// checks if the flat parent path is the same as the parentMap key
 			assert.Equal(t, idParentFile.Path, parentPath)
 		} else {
-			// nil ID means the parent is root
+			// empty ID means the parent is root
 			assert.Equal(t, parentPath, dir)
 			assert.Equal(t, filepath.Dir(file.Path), dir)
 		}

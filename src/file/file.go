@@ -52,10 +52,9 @@ type File struct {
 	// Extension is the extension of the file type.
 	Extension string `json:"extension"`
 
-	// ParentID is the parent's unique ID that the file resides in.
-	// This can be nil, meaning it resides in the root folder. An
-	// empty string also represents the root folder.
-	ParentID *string `json:"parentID"`
+	// ParentID is the parent's file ID that the file resides in.
+	// If it is an empty string then it is considered to be in the root folder.
+	ParentID string `json:"parentID"`
 
 	// Path is the absolute path to the file on the disk. This is intended
 	// for the backend use only and should not be sent to the frontend.
@@ -84,7 +83,7 @@ type FileResponse struct {
 	Type       FileType   `json:"fileType"`
 	FileID     string     `json:"fileID"`
 	Extension  string     `json:"extension"`
-	ParentID   *string    `json:"parentID"`
+	ParentID   string     `json:"parentID"`
 	Size       int64      `json:"fileSize"`
 	ModifiedOn time.Time  `json:"modifedOn"`
 	DeletedOn  *time.Time `json:"deletedOn"`
@@ -98,7 +97,7 @@ func NewFile(accountId string,
 	fileExt string,
 	filePath string,
 	fileSize int64,
-	parentId *string) File {
+	parentId string) File {
 	id := uuid.NewString()
 
 	return File{
@@ -184,11 +183,7 @@ func (f *File) StringClean() string {
 	write(ColumnFileType, f.Type)
 	write(ColumnFileID, f.FileID)
 	write(ColumnFileExtension, f.Extension)
-	var parentIdValue string
-	if f.ParentID != nil {
-		parentIdValue = *f.ParentID
-	}
-	write(ColumnParentID, parentIdValue)
+	write(ColumnParentID, f.ParentID)
 	write(ColumnFileSize, f.Size)
 	write(ColumnModifiedOn, f.ModifiedOn.UTC().String())
 
@@ -219,19 +214,6 @@ func (f *File) ToFileResponse() *FileResponse {
 	}
 }
 
-// ParentIdString converts the parent ID to a string value.
-//
-// It handles nil values and will return the string nil if
-// the parent ID is nil.
-func (f *File) ParentIdString() string {
-	s := "nil"
-	if f.ParentID != nil {
-		s = *f.ParentID
-	}
-
-	return s
-}
-
 // walk is used to traverse root and return a File slice for
 // all the files in root.
 //
@@ -240,8 +222,8 @@ func (f *File) ParentIdString() string {
 func walk(root string) ([]File, error) {
 	fs := []File{}
 
-	folderIDMap := map[string]*string{
-		root: nil,
+	folderIDMap := map[string]string{
+		root: "",
 	}
 
 	// folder name of root is the account ID
@@ -259,13 +241,13 @@ func walk(root string) ([]File, error) {
 		if p != root {
 			fileType := FileTypeFile
 
-			var parentID *string
+			var parentID string
 			parent := filepath.Dir(p)
 			if info.IsDir() {
 				fileType = FileTypeDir
 				_, ok := folderIDMap[p]
 				if !ok {
-					folderIDMap[p] = &id
+					folderIDMap[p] = id
 				}
 			}
 
