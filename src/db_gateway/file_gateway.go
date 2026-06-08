@@ -19,6 +19,7 @@ var (
 	// ServerErr that represents an error on the server.
 	ServerErr     = errors.New("an error occured on the server")
 	UniqueFileErr = errors.New("file already exists, file must be unique")
+	NoFileArgsErr = errors.New("no files given")
 )
 
 // NewFileGateway creates a new FileGateway for database related options.
@@ -127,12 +128,21 @@ func (f *FileGateway) UpdateFile(fileOwnerID string, fileId, column string, arg 
 }
 
 // AddFile adds slice of File structs to the File database.
-// If an error occurs it will return an error.
 //
-// This does not write the files to the disk.
+// A special duplicate error can be returned.
+// A duplicate error can occur if the following are true for a File:
+//   - File.Type is "file"
+//   - An existing entry with the same File.Name, File.Extension, and File.ParentID
+//
+// A special files length of 0 error can also be returned.
+//
+// Otherwise generic errors are returned for client usage. If one file fails then all
+// given files will fail.
+//
+// This does not write the files to the disk, it is strictly used for metadata purposes.
 func (f *FileGateway) AddFile(files ...file.File) error {
 	if len(files) == 0 {
-		return fmt.Errorf("no arguments given for AddFile")
+		return NoFileArgsErr
 	}
 
 	query, args, err := sqlquery.InsertInto(
@@ -149,17 +159,18 @@ func (f *FileGateway) AddFile(files ...file.File) error {
 		file.ColumnDeletedOn,
 	).Args(file.FlattenFile(files...)...).Build()
 	if err != nil {
-		f.deps.Log.Criticalf("Failed to build query: %v", err)
+		f.deps.Log.Criticalf("Failed to build ADD FILE INSERT INTO query: %v", err)
 		return SqlErr
 	}
 
+	// duplicate errors can occur here, the original err has to be returned and handled
 	res, err := execQuery(f.database, query, args...)
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to insert into %s: %v | Query: %s", file.TableName, err, query)
-		return SqlErr
+		return err
 	}
 
-	f.deps.Log.Infof("Added %d files", len(files))
+	f.deps.Log.Infof("Successfully added %d files", len(files))
 	logResultRows(f.deps.Log, res)
 
 	return nil
@@ -273,20 +284,14 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 		}
 	}
 
-	args := []any{accountId}
-	parentCondition := "= ?"
-	if parentFolderID == "" {
-		parentCondition = "IS NULL"
-	} else {
-		args = append(args, parentFolderID)
-	}
+	args := []any{accountId, parentFolderID}
 
 	query := fmt.Sprintf(`
 		SELECT f.*
 		FROM %s f 
 		JOIN %s 
 			ON u.%s = f.%s 
-		WHERE u.%s = ? AND f.%s %s
+		WHERE u.%s = ? AND f.%s = ?
 		`,
 		file.TableName,
 		fmt.Sprintf("%s u", user.TableName),
@@ -294,7 +299,6 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 		file.ColumnFileOwnerID,
 		user.ColumnAccountID,
 		file.ColumnParentID,
-		parentCondition,
 	)
 
 	rows, err := f.database.Query(query, args...)
@@ -309,76 +313,6 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 	}
 
 	return files, nil
-}
-
-// validateAddFile queries the database with File properties to ensure it is unique.
-//
-// It will check the file name, file extension, file type, and the parent ID.
-// Uniqueness is dependent on if an existing file already exists with the
-// same parent ID and the four properties match.
-//
-// Directory files do not need to be validated.
-func (f *FileGateway) validateAddFile(fi file.File) error {
-	if fi.Type == file.FileTypeDir {
-		return nil
-	}
-
-	args := []any{
-		fi.OwnerID,
-		fi.Name,
-		fi.Extension,
-		fi.Type,
-	}
-
-	parentIDCondition := "IS NULL"
-	if fi.ParentID != nil {
-		parentIDCondition = "= ?"
-		args = append(args, *fi.ParentID)
-	}
-
-	query := fmt.Sprintf(`
-		SELECT COUNT(*)
-		FROM %s
-		WHERE %s = ?
-			AND %s = ?
-			AND %s = ?
-			AND %s = ?
-			AND %s %s`,
-		file.TableName,
-		file.ColumnFileOwnerID,
-		file.ColumnFileName,
-		file.ColumnFileExtension,
-		file.ColumnFileType,
-		file.ColumnParentID, parentIDCondition,
-	)
-
-	rows, err := f.database.Query(query, args...)
-	if err != nil {
-		f.deps.Log.Criticalf("Failed to query database: %v | Query: %s", err, query)
-		return SqlErr
-	}
-
-	type Counter struct{ Count int }
-	count := Counter{}
-	err = SelectRow(rows, &count)
-	if err != nil {
-		f.deps.Log.Criticalf("Failed to retrieve rows with query: %v", err)
-		return SqlErr
-	}
-
-	if count.Count > 0 {
-		f.deps.Log.Warnf(
-			"File %s failed unique condition (ext=%s,type=%s,parentId=%s)",
-			fi.Name,
-			fi.Extension,
-			fi.Type,
-			fi.ParentIdString(),
-		)
-
-		return UniqueFileErr
-	}
-
-	return nil
 }
 
 // validateFileExists checks if the folder ID has the correct formatting and
