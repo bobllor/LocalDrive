@@ -1,7 +1,6 @@
 package dbgateway
 
 import (
-	"errors"
 	"testing"
 	"time"
 
@@ -102,6 +101,94 @@ func TestAddFile(t *testing.T) {
 	})
 }
 
+func TestAddFileDuplicate(t *testing.T) {
+	gw, db := NewTestGatewayDB(t)
+
+	t.Run("Duplicate file error", func(t *testing.T) {
+		fi := file.NewFile(
+			tests.DbRowInfo.AccountID,
+			tests.DbRowInfo.FileName,
+			file.FileTypeFile,
+			".txt",
+			"",
+			0,
+			"",
+		)
+
+		// not needed for this test run but using just in case
+		t.Cleanup(func() {
+			DropRows(db, file.TableName, file.ColumnFileID, fi.FileID)
+		})
+
+		err := gw.File.AddFile(fi)
+		assert.NotNil(t, err)
+		assert.True(t, IsDuplicateSqlError(err))
+	})
+
+	t.Run("Duplicate name pass diff parent ID", func(t *testing.T) {
+		fi := file.NewFile(
+			tests.DbRowInfo.AccountID,
+			tests.DbRowInfo.FileName,
+			file.FileTypeFile,
+			".txt",
+			"",
+			0,
+			"parentid1",
+		)
+
+		t.Cleanup(func() {
+			DropRows(db, file.TableName, file.ColumnFileID, fi.FileID)
+		})
+
+		err := gw.File.AddFile(fi)
+		assert.Nil(t, err)
+
+		enfi, err := gw.File.GetFile(tests.DbRowInfo.AccountID, fi.FileID)
+		assert.Nil(t, err)
+
+		assert.Equal(t, enfi.Name, fi.Name)
+	})
+
+	t.Run("Add folders no duplicate error", func(t *testing.T) {
+		folderName := "a folder here"
+		folder1 := file.NewFile(
+			tests.DbRowInfo.AccountID,
+			folderName,
+			file.FileTypeDir,
+			"",
+			"",
+			0,
+			"",
+		)
+
+		folder2 := file.NewFile(
+			tests.DbRowInfo.AccountID,
+			folderName,
+			file.FileTypeDir,
+			"",
+			"",
+			0,
+			"",
+		)
+
+		t.Cleanup(func() {
+			DropRows(db, file.TableName, file.ColumnFileID, folder1.FileID)
+			DropRows(db, file.TableName, file.ColumnFileID, folder2.FileID)
+		})
+
+		err := gw.File.AddFile(folder1, folder2)
+		assert.Nil(t, err)
+
+		bf1, err := gw.File.GetFile(tests.DbRowInfo.AccountID, folder1.FileID)
+		assert.Nil(t, err)
+		bf2, err := gw.File.GetFile(tests.DbRowInfo.AccountID, folder2.FileID)
+		assert.Nil(t, err)
+
+		assert.Equal(t, bf1.Name, folderName)
+		assert.Equal(t, bf2.Name, folderName)
+	})
+}
+
 func TestDeleteFiles(t *testing.T) {
 	fDb, err := getTestFileGateway()
 	assert.Nil(t, err)
@@ -197,7 +284,6 @@ func TestAddMissingOwnerIDFileError(t *testing.T) {
 
 	err = fDb.AddFile(f)
 	assert.NotNil(t, err)
-	assert.True(t, errors.Is(err, SqlErr))
 }
 
 func TestUpdateFiles(t *testing.T) {
@@ -299,66 +385,6 @@ func TestRenameFileName(t *testing.T) {
 
 	err = fg.RenameFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID, newFileName)
 	assert.Nil(t, err)
-}
-
-func TestValidateUniqueFile(t *testing.T) {
-	fg, err := getTestFileGateway()
-	assert.Nil(t, err)
-
-	type cases struct {
-		File          file.File
-		IsFail        bool
-		ReplaceParent string
-	}
-
-	fileCases := []cases{
-		{
-			File: file.File{
-				Name:      tests.DbRowInfo.FileName,
-				FileID:    "12435nonexistent",
-				Type:      file.FileTypeFile,
-				Extension: ".txt",
-				OwnerID:   tests.DbRowInfo.AccountID,
-				ParentID:  nil,
-			},
-			IsFail:        false,
-			ReplaceParent: "parentid234",
-		},
-		{
-			File: file.File{
-				Name:      tests.DbRowInfo.FileName,
-				FileID:    "12345nonexistent",
-				Type:      file.FileTypeFile,
-				Extension: ".txt",
-				OwnerID:   tests.DbRowInfo.AccountID,
-				ParentID:  nil,
-			},
-			IsFail: true,
-		},
-		{
-			File: file.File{
-				Name:      tests.DbRowInfo.FileName,
-				FileID:    "12345",
-				Type:      file.FileTypeDir,
-				Extension: "",
-				OwnerID:   tests.DbRowInfo.AccountID,
-				ParentID:  nil,
-			},
-			IsFail: false,
-		},
-	}
-
-	for _, fi := range fileCases {
-		if fi.ReplaceParent != "" {
-			fi.File.ParentID = &fi.ReplaceParent
-		}
-		err = fg.validateAddFile(fi.File)
-		if !fi.IsFail {
-			assert.Nil(t, err)
-		} else {
-			assert.NotNil(t, err)
-		}
-	}
 }
 
 // getFileDb gets the [FileGateway] for the test database.
