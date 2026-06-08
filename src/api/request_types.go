@@ -16,16 +16,16 @@ type RequestUserRegisterInfo struct {
 
 // RequestFileUploadInfo is used to hold metadata of the file being uploaded.
 type RequestFileUploadInfo struct {
-	FileName      string  `json:"fileName"`
-	FileSize      int     `json:"fileSize"`
-	FileExtension string  `json:"fileExtension"`
-	FileParentId  *string `json:"fileParentId"`
-	TotalChunks   int     `json:"totalChunks"`
+	FileName      string `json:"fileName"`
+	FileSize      int    `json:"fileSize"`
+	FileExtension string `json:"fileExtension"`
+	FileParentId  string `json:"fileParentId"`
+	TotalChunks   int    `json:"totalChunks"`
 }
 
 // RequestAddFolderInfo contains the request body for adding a folder to the
 // database and organization of files for the front end.
 type RequestAddFolderInfo struct {
-	Name     string  `json:"fileName"`
-	ParentId *string `json:"parentId"`
+	Name     string `json:"fileName"`
+	ParentId string `json:"parentId"`
 }
