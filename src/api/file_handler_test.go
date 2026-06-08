@@ -219,7 +219,7 @@ func TestUploadGenerateId(t *testing.T) {
 		body, err := tests.NewRequestBody(RequestFileUploadInfo{
 			FileName:      fileName,
 			FileSize:      12345555,
-			FileParentId:  nil,
+			FileParentId:  "",
 			FileExtension: ".mp4",
 			TotalChunks:   15,
 		})
@@ -285,7 +285,7 @@ func TestUploadFileChunk(t *testing.T) {
 	body, err := tests.NewRequestBody(RequestFileUploadInfo{
 		FileName:      fileName,
 		FileSize:      len(b),
-		FileParentId:  nil,
+		FileParentId:  "",
 		FileExtension: ".txt",
 		TotalChunks:   int(chunks),
 	})
@@ -374,7 +374,7 @@ func TestCompleteUploadFile(t *testing.T) {
 	body, err := tests.NewRequestBody(RequestFileUploadInfo{
 		FileName:      fileName,
 		FileSize:      len(b),
-		FileParentId:  nil,
+		FileParentId:  "",
 		FileExtension: ".txt",
 		TotalChunks:   int(chunks),
 	})
@@ -457,11 +457,9 @@ func TestAddFolder(t *testing.T) {
 	defer serv.Close()
 
 	folderName := "very secret folder"
-	var folderParent *string
-
 	reqData := RequestAddFolderInfo{
 		Name:     folderName,
-		ParentId: folderParent,
+		ParentId: folderName,
 	}
 	reqBody, err := json.Marshal(reqData)
 	assert.Nil(t, err)
