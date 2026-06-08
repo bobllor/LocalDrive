@@ -81,9 +81,11 @@ func (ug *UserGateway) AddUser(username string, password string) (*user.UserAcco
 		user.ColumnActive,
 	).Args(args...).Build()
 	if err != nil {
-		return nil, fmt.Errorf("failed to build INSERT INTO query: %v", err)
+		ug.deps.Log.Criticalf("Failed to build ADD USER INSERT INTO query: %v", err)
+		return nil, SqlErr
 	}
 
+	// duplicate errors can occur here, the original err has to be returned and handled
 	res, err := execQuery(ug.database, query, args...)
 	if err != nil {
 		ug.deps.Log.Warnf("Failed to execute query: %v | query: %s", err, query)
