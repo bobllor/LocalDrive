@@ -25,7 +25,17 @@ if [[ "$container_status" == "false" ]]; then
         --mount type=volume,src=$c_name,dst=/var/lib/mysql \
         --mount type=bind,src=/etc/timezone,dst=/etc/timezone,readonly \
         --mount type=bind,src=/etc/localtime,dst=/etc/localtime,readonly \
-        mysql:lts-oracle 2>&1
+        mysql:lts-oracle 2>&1 ||
+    # NOTE: this may fail some tests due to the removal of the timezone,
+    # but theoretically it should still work
+    docker run --detach \
+        --name "$c_name" \
+        -p "$host_port:$c_port" \
+        --env MYSQL_ALLOW_EMPTY_PASSWORD=yes \
+        --mount type=volume,src=$c_name,dst=/var/lib/mysql \
+        --mount type=bind,src=/etc/localtime,dst=/etc/localtime,readonly \
+        mysql:lts-oracle 2>&1 ||
+    
 
     init_status=false
     echo "Waiting for server connection..."
