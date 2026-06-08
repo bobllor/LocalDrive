@@ -49,8 +49,6 @@ export type FileResponse = {
     deletedOn?: Date
 }
 
-const ROOT_KEY = "root";
-
 export const useFileStore = create<FileStore>((set, get) => ({
     files: {},
     setFiles: async (parentId ?: string) => {
@@ -110,11 +108,14 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
 /**
  * Checks the parent ID and returns the parent ID if it is not undefined, otherwise
- * it will return the default root key value.
+ * it will return an empty value.
  * 
  * @param parentId A string representing the parent ID, this can be undefined
  * @returns 
  */
 function getParentIdUndefined(parentId?: string): string{
-    return parentId ? parentId : ROOT_KEY;
+    // kept as a "just in case" helper
+    // as of 6/7/2026 nil/undefined is no longer allowed for parent IDs,
+    // an empty parent ID is considered to be the root
+    return parentId ? parentId : "";
 }
