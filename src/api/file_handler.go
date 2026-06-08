@@ -181,7 +181,7 @@ func (fh *FileHandler) UploadGenerateId(w http.ResponseWriter, r *http.Request) 
 	fh.util.Log.Debugf("Generated file ID: %s", fileId)
 	filePath := filepath.Join(userContext.AccountId, fileId)
 
-	fileEntry := file.File{
+	entry := file.File{
 		OwnerID:   userContext.AccountId,
 		Name:      meta.FileName,
 		Extension: meta.FileExtension,
@@ -196,9 +196,22 @@ func (fh *FileHandler) UploadGenerateId(w http.ResponseWriter, r *http.Request) 
 		DeletedOn:  nil,
 	}
 
-	fh.util.Log.Debugf("File entry (clean): %s", fileEntry.StringClean())
+	fh.util.Log.Debugf("File entry (clean): %s", entry.StringClean())
 
-	err = fh.gateway.File.AddFile(fileEntry)
+	err = fh.gateway.File.AddFile(entry)
+	if dbgateway.IsDuplicateSqlError(err) {
+		fh.util.HttpWriteCustomBadDataError(
+			w,
+			fmt.Sprintf("Duplicate file %s.%s", entry.Name, entry.Extension),
+			ReasonDuplicateData,
+			fmt.Sprintf("Duplicate file entry found for %s.%s", entry.Name, entry.Extension),
+		)
+		return
+	}
+	if errors.Is(err, dbgateway.NoFileArgsErr) {
+		fh.util.HttpWriteBadDataError(w, "No files given: %v", err)
+		return
+	}
 	if err != nil {
 		fh.util.HttpWriteInternalError(w, "Failed to add file to database: %v", err)
 		return
@@ -206,7 +219,7 @@ func (fh *FileHandler) UploadGenerateId(w http.ResponseWriter, r *http.Request) 
 
 	fh.uploadSessions[uploadId] = chunkInfo{
 		TotalChunks:  meta.TotalChunks,
-		FileInfo:     fileEntry,
+		FileInfo:     entry,
 		ChunkIndexes: make(map[int]string),
 	}
 	fh.util.Log.Infof("New chunk info created for %s, total chunks: %d", uploadId, meta.TotalChunks)
@@ -418,7 +431,8 @@ func (fh *FileHandler) UploadFileComplete(w http.ResponseWriter, r *http.Request
 // the folder name and folder's parent ID. The body will contain the
 // FileResponse struct for use on the front end immediately after the call ends.
 //
-// Folders are only metadata, no physical files are created.
+// Folders are only metadata, no physical files are created. If the folder name is
+// empty, it will default to "New folder".
 //
 // Auth middleware is required.
 func (fh *FileHandler) PostAddFolder(w http.ResponseWriter, r *http.Request) {
@@ -437,6 +451,10 @@ func (fh *FileHandler) PostAddFolder(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	fh.util.Log.Debugf("Request body: %v", folderReqBody)
+	if folderReqBody.Name == "" {
+		fh.util.Log.Info("Empty folder name, changing to 'New Folder'")
+		folderReqBody.Name = "New folder"
+	}
 
 	// folders are not written to the disk
 	folderFile := file.NewFile(
@@ -455,12 +473,7 @@ func (fh *FileHandler) PostAddFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	folderParent := "root"
-	if folderReqBody.ParentId != nil {
-		folderParent = *folderReqBody.ParentId
-	}
-
-	fh.util.Log.Infof("Created folder '%s' (parentId=%s,id=%s)", folderFile.Name, folderParent, folderFile.FileID)
+	fh.util.Log.Infof("Created folder '%s' (parentId=%s,id=%s)", folderFile.Name, folderFile.ParentID, folderFile.FileID)
 
 	n, err := WriteResponse(w, NewApiResponse(folderFile.ToFileResponse()))
 	if err != nil {
@@ -475,7 +488,7 @@ func (fh *FileHandler) PostAddFolder(w http.ResponseWriter, r *http.Request) {
 // parent folder ID.
 //
 // If a parent folder ID is given, it will retrieve those parent folder files.
-// If parent folder is nil, then it will retrieve the files with a nil parent or the
+// If parent folder is empty, then it will retrieve the files with no parent or the
 // root children.
 //
 // This requires the auth middleware wrapper due to the context.
