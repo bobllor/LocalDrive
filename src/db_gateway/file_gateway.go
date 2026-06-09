@@ -39,7 +39,7 @@ type FileGateway struct {
 	deps           *utils.Deps
 }
 
-// GetAllFiles returns a File slice of all File rows belonging to the file owner.
+// GetAllFiles returns a FileResponse slice of all File rows belonging to the file owner.
 //
 // If an error occurs then it will return an error, and abort
 // the scanning process if it is occurring.
@@ -50,6 +50,7 @@ func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, erro
 		file.ColumnFileID, file.ColumnFileExtension,
 		file.ColumnParentID, file.ColumnFileSize,
 		file.ColumnModifiedOn, file.ColumnDeletedOn,
+		file.ColumnUploadInProgress,
 	).Where().Equal(file.ColumnFileOwnerID, fileOwnerID).Build()
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to build query: %v | Query: %s | Args: %d", err, query, len(args))
@@ -122,6 +123,7 @@ func (f *FileGateway) UpdateFile(fileOwnerID string, fileId, column string, arg 
 		return SqlErr
 	}
 
+	f.deps.Log.Infof("Updated file %s", fileId)
 	logResultRows(f.deps.Log, res)
 
 	return nil
@@ -157,6 +159,8 @@ func (f *FileGateway) AddFile(files ...file.File) error {
 		file.ColumnFileSize,
 		file.ColumnModifiedOn,
 		file.ColumnDeletedOn,
+		file.ColumnUploadInProgress,
+		file.ColumnUniqueHash,
 	).Args(file.FlattenFile(files...)...).Build()
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to build ADD FILE INSERT INTO query: %v", err)
@@ -381,6 +385,8 @@ func (f *FileGateway) getFiles(rows *sql.Rows) ([]file.File, error) {
 			&f.Size,
 			&f.ModifiedOn,
 			&f.DeletedOn,
+			&f.UploadInProgress,
+			&f.UniqueHash,
 		)
 
 		if scanErr != nil {
