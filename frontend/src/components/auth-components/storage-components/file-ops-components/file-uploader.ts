@@ -1,5 +1,4 @@
 import { fetchApi } from "../../../../functions/fetchtils";
-import type { ResponseApi } from "../../../../response-types";
 
 const KILOBYTE = 1024;
 
@@ -55,6 +54,9 @@ export class FileUploader{
             };
 
             console.log(reqBody);
+            const uploadSessionID = await this.generateUploadId(reqBody);
+
+            await this.uploadChunks(file, uploadSessionID);
         }
     }
 
@@ -66,13 +68,42 @@ export class FileUploader{
         return this.files.length;
     }
 
+    private async uploadChunks(file: File, uploadId: string){
+        let start = 0;
+        let end = this.bytes;
+        let chunkIndex = 0;
+
+        while(start < file.size){
+            if(end > file.size){
+                // ensures that we dont go out of bounds
+                end = file.size;
+            }
+            const apiEndpoint = `/api/upload/${uploadId}/${chunkIndex}`;
+            const chunkBlob = file.slice(start, end);
+            console.log(chunkBlob, chunkIndex);
+
+            const res = await fetchApi(apiEndpoint, "POST", chunkBlob);
+
+            start += this.bytes;
+            end += this.bytes;
+            chunkIndex += 1;
+        }
+    }
+
     /**
-     * Generates an upload ID.
+     * Generates an upload ID. If the request is successful, it will
+     * return the upload session ID. Otherwise, it will throw an error.
      */
     private async generateUploadId(uploadReq: FileUploadRequest): Promise<string>{
-        const res = await fetchApi<string>("/api/upload", "POST", uploadReq)
+        try{
+            const res = await fetchApi<string>("/api/upload", "POST", uploadReq)
+            
+            console.debug("Generated ID response:", res);
 
-        return res.output;
+            return res.output;
+        }catch(err){
+            throw err;
+        }
     }
 
     private getNameAndExtension(fileName: string): FileNameExtension{
