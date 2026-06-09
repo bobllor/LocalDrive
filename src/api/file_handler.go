@@ -14,7 +14,6 @@ import (
 
 	dbgateway "github.com/bobllor/cloud-project/src/db_gateway"
 	"github.com/bobllor/cloud-project/src/file"
-	"github.com/bobllor/cloud-project/src/utils"
 	"github.com/bobllor/gologger"
 	"github.com/google/uuid"
 )
@@ -121,6 +120,7 @@ func (fh *FileHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	defer f.Close()
 
 	// removing leading periods for normalization
+	// recreation of the file name will include the period again.
 	fileExt := strings.TrimPrefix(fi.Extension, ".")
 	fileName := fmt.Sprintf("%s.%s", fi.Name, fileExt)
 	encodedFileName := url.PathEscape(fileName)
@@ -177,24 +177,19 @@ func (fh *FileHandler) UploadGenerateId(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	fileId := uuid.NewString()
-	fh.util.Log.Debugf("Generated file ID: %s", fileId)
-	filePath := filepath.Join(userContext.AccountId, fileId)
+	// will never be a directory, files are flattened in the storage
+	// directories are added in a fh.PostAddFolder
+	entry := file.NewFile(
+		userContext.AccountId,
+		meta.FileName,
+		file.FileTypeFile,
+		strings.TrimPrefix(meta.FileExtension, "."),
+		int64(meta.FileSize),
+		meta.FileParentId,
+		true,
+	)
 
-	entry := file.File{
-		OwnerID:   userContext.AccountId,
-		Name:      meta.FileName,
-		Extension: meta.FileExtension,
-		// will never be a directory, files are flattened in the storage
-		// directories are added in a different handler
-		Type:       file.FileTypeFile,
-		Size:       int64(meta.FileSize),
-		FileID:     fileId,
-		ModifiedOn: utils.NowUTC(),
-		ParentID:   meta.FileParentId,
-		Path:       filePath,
-		DeletedOn:  nil,
-	}
+	fh.util.Log.Debugf("Generated file ID: %s", entry.FileID)
 
 	fh.util.Log.Debugf("File entry (clean): %s", entry.StringClean())
 
@@ -262,7 +257,17 @@ func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
 			ReasonBadRequestData,
 			"Invalid chunk given: chunk index %d is greater than total chunks %d",
 			chunkIndex,
-			cinfo.TotalChunks)
+			cinfo.TotalChunks,
+		)
+		return
+	}
+	if cinfo.TotalChunks == len(cinfo.ChunkIndexes) {
+		fh.util.HttpWriteBadDataError(w,
+			"Written chunks is equal to total chunks for session %s (%d=%d)",
+			uploadId,
+			cinfo.TotalChunks,
+			len(cinfo.ChunkIndexes),
+		)
 		return
 	}
 	mutex := fh.uploadMutex.Get(uploadId)
@@ -330,7 +335,8 @@ func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
 // missing/invalid headers, or any general file writing errors, then the request will be rejected.
 // The file will be removed from the storage.
 //
-// Upon a successful upload, it will return a FileResponse response.
+// Upon a successful upload, it will return a FileResponse response. This is used in the front end
+// to update the UI for the file.
 //
 // This requires the auth middleware.
 func (fh *FileHandler) UploadFileComplete(w http.ResponseWriter, r *http.Request) {
@@ -416,6 +422,14 @@ func (fh *FileHandler) UploadFileComplete(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	// updating the progress state to false since upload is complete
+	cinfo.FileInfo.UploadInProgress = false
+	upErr := fh.gateway.File.UpdateFile(userContext.AccountId, cinfo.FileInfo.FileID, file.ColumnUploadInProgress, cinfo.FileInfo.UploadInProgress)
+	if upErr != nil {
+		// errors will not cancel, the file will still be shown on the front end thanks to the response.
+		// background workers will resolve the issue periodically.
+		fh.util.Log.Criticalf("Failed to update file %s: %v", cinfo.FileInfo.FileID, err)
+	}
 	fileRes := cinfo.FileInfo.ToFileResponse()
 
 	WriteResponse(w, NewApiResponse(fileRes))
@@ -462,9 +476,9 @@ func (fh *FileHandler) PostAddFolder(w http.ResponseWriter, r *http.Request) {
 		folderReqBody.Name,
 		file.FileTypeDir,
 		"",
-		"",
 		0,
 		folderReqBody.ParentId,
+		false,
 	)
 
 	dbErr := fh.gateway.File.AddFile(folderFile)
