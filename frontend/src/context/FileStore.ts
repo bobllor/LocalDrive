@@ -47,6 +47,7 @@ export type FileResponse = {
     fileSize: number
     modifiedOn: Date
     deletedOn?: Date
+    uploadInProgress: boolean
 }
 
 export const useFileStore = create<FileStore>((set, get) => ({
