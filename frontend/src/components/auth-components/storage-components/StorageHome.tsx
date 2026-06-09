@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX, type RefObject } from "react";
 import { useNavigate, useParams } from "react-router";
 import { fetchApi } from "../../../functions/fetchtils";
 import { useFileStore, type FileResponse } from "../../../context/FileStore";
@@ -7,6 +7,7 @@ import FileOpButton, { type FileOperation } from "./file-ops-components/FileOpBu
 import BackgroundBlur from "../../ui/BackgroundBlur";
 import AddFolderOp from "./file-ops-components/AddFolderOp";
 import ModalBase from "../../ui/ModalBase";
+import { FileUploader } from "./file-ops-components/file-uploader";
 
 export default function StorageHome(): JSX.Element{
     /**
@@ -33,7 +34,10 @@ export default function StorageHome(): JSX.Element{
     const files = useFileDisplay();
 
     const [showBlur, setShowBlur] = useState(false);
-    const [fileOp, setFileOp] = useState<FileOperation>(null);
+    const [fileOp, setFileOp] = useState<FileOperation>("");
+
+    const inputUploadFileRef = useRef<HTMLInputElement | null>(null);
+    const params = useParams();
 
     /**
      * Closes the background blur.
@@ -42,7 +46,7 @@ export default function StorageHome(): JSX.Element{
 
     return (
         <>
-            {showBlur &&
+            {showBlur && fileOp != "" &&
                 <BackgroundBlur setBlur={setShowBlur}>
                     <ModalBase>
                         {fileOp == "addFolder" && <AddFolderOp onClose={onClose} />}
@@ -50,7 +54,7 @@ export default function StorageHome(): JSX.Element{
                 </BackgroundBlur>
             }
             <div className="flex flex-col justify-center items-center gap-1">
-                <FileOpButton setBlur={setShowBlur} setFileOp={setFileOp} />
+                <FileOpButton setBlur={setShowBlur} setFileOp={setFileOp} fileUploadRef={inputUploadFileRef} />
                 <button onClick={logout} className="border w-fit h-fit py-2 px-4">Logout</button>
                 <div className="border w-full">
                     {files !== undefined
@@ -58,9 +62,36 @@ export default function StorageHome(): JSX.Element{
                     : <div>Loading...</div>
                     }
                 </div>
+                {/* file is hidden, the FileOpButton will trigger the upload */}
+                <input type="file" hidden onChange={() => onInputFileChange(inputUploadFileRef, params.folderId)} ref={inputUploadFileRef} />
             </div> 
         </>
     )
+}
+
+/**
+ * Handles uploading a file to the backend. If 
+ * @param ref The reference object of the file uploading input element
+ * @param parentId The parent ID of the file, can be undefined or empty
+ * @returns 
+ */
+async function onInputFileChange(ref: RefObject<HTMLInputElement | null>, parentId?: string){
+    if(!ref.current){
+        return;
+    }
+    const inputEle = ref.current;
+    if(!ref.current.files){
+        return;
+    }
+
+    try{
+        const uploader = new FileUploader(ref.current.files);
+
+        await uploader.upload(parentId);
+    }finally{
+        // resets the input file
+        inputEle.value = "";
+    }
 }
 
 /**
