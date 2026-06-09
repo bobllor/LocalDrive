@@ -7,6 +7,7 @@ import (
 	"github.com/bobllor/assert"
 	"github.com/bobllor/cloud-project/src/file"
 	"github.com/bobllor/cloud-project/src/tests"
+	"github.com/bobllor/cloud-project/src/user"
 	"github.com/bobllor/cloud-project/src/utils"
 )
 
@@ -109,10 +110,10 @@ func TestAddFileDuplicate(t *testing.T) {
 			tests.DbRowInfo.AccountID,
 			tests.DbRowInfo.FileName,
 			file.FileTypeFile,
-			".txt",
-			"",
+			"txt",
 			0,
 			"",
+			false,
 		)
 
 		// not needed for this test run but using just in case
@@ -130,10 +131,10 @@ func TestAddFileDuplicate(t *testing.T) {
 			tests.DbRowInfo.AccountID,
 			tests.DbRowInfo.FileName,
 			file.FileTypeFile,
-			".txt",
-			"",
+			"txt",
 			0,
 			"parentid1",
+			false,
 		)
 
 		t.Cleanup(func() {
@@ -143,10 +144,39 @@ func TestAddFileDuplicate(t *testing.T) {
 		err := gw.File.AddFile(fi)
 		assert.Nil(t, err)
 
-		enfi, err := gw.File.GetFile(tests.DbRowInfo.AccountID, fi.FileID)
+		_, err = gw.File.GetFile(tests.DbRowInfo.AccountID, fi.FileID)
+		assert.Nil(t, err)
+	})
+
+	t.Run("Duplicate name pass different account ID", func(t *testing.T) {
+		username := "iamauser"
+		usr, err := gw.User.AddUser(username, "1234!password")
 		assert.Nil(t, err)
 
-		assert.Equal(t, enfi.Name, fi.Name)
+		t.Cleanup(func() {
+			// cascade deletion
+			DropRows(db, user.TableName, user.ColumnAccountID, usr.AccountID)
+		})
+
+		fi := file.NewFile(
+			usr.AccountID,
+			tests.DbRowInfo.FileName,
+			file.FileTypeFile,
+			"txt",
+			0,
+			"",
+			false,
+		)
+
+		err = gw.File.AddFile(fi)
+		assert.Nil(t, err)
+
+		bfi, err := gw.File.GetFile(usr.AccountID, fi.FileID)
+		assert.Nil(t, err)
+		assert.NotNil(t, bfi)
+
+		assert.Equal(t, bfi.Name, fi.Name)
+		assert.Equal(t, bfi.Extension, fi.Extension)
 	})
 
 	t.Run("Add folders no duplicate error", func(t *testing.T) {
@@ -156,9 +186,9 @@ func TestAddFileDuplicate(t *testing.T) {
 			folderName,
 			file.FileTypeDir,
 			"",
-			"",
 			0,
 			"",
+			false,
 		)
 
 		folder2 := file.NewFile(
@@ -166,9 +196,9 @@ func TestAddFileDuplicate(t *testing.T) {
 			folderName,
 			file.FileTypeDir,
 			"",
-			"",
 			0,
 			"",
+			false,
 		)
 
 		t.Cleanup(func() {
@@ -336,7 +366,7 @@ func TestGetFilesByAccountIDAndParentFolder(t *testing.T) {
 
 		assert.Equal(t, len(files), 1)
 		assert.Equal(t, files[0].Name, baseName)
-		assert.Equal(t, files[0].Extension, ".txt")
+		assert.Equal(t, files[0].Extension, "txt")
 	})
 
 	t.Run("Invalid folder", func(t *testing.T) {
