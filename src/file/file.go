@@ -7,24 +7,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bobllor/cloud-project/src/utils"
 	"github.com/google/uuid"
 )
 
 const (
 	// FileColumnSize is the amount of columns used for the Files table.
 	// It is equal to the public fields of the [File] struct.
-	ColumnSize          int    = 10
-	TableName           string = "File"
-	ColumnFileOwnerID   string = "AccountID" // ColumnFileOwnerID is the column name for the file's owner account ID.
-	ColumnFileName      string = "FileName"
-	ColumnFileType      string = "FileType"
-	ColumnFileID        string = "FileID"
-	ColumnFileExtension string = "Extension"
-	ColumnParentID      string = "ParentID"
-	ColumnFilePath      string = "FilePath"
-	ColumnFileSize      string = "FileSize"
-	ColumnModifiedOn    string = "ModifiedOn"
-	ColumnDeletedOn     string = "DeletedOn"
+	ColumnSize             int    = 12
+	TableName              string = "File"
+	ColumnFileOwnerID      string = "AccountID" // ColumnFileOwnerID is the column name for the file's owner account ID.
+	ColumnFileName         string = "FileName"
+	ColumnFileType         string = "FileType"
+	ColumnFileID           string = "FileID"
+	ColumnFileExtension    string = "Extension"
+	ColumnParentID         string = "ParentID"
+	ColumnFilePath         string = "FilePath"
+	ColumnFileSize         string = "FileSize"
+	ColumnModifiedOn       string = "ModifiedOn"
+	ColumnDeletedOn        string = "DeletedOn"
+	ColumnUploadInProgress string = "UploadInProgress"
+	ColumnUniqueHash       string = "UniqueHash"
 )
 
 type FileType string
@@ -56,8 +59,11 @@ type File struct {
 	// If it is an empty string then it is considered to be in the root folder.
 	ParentID string `json:"parentID"`
 
-	// Path is the absolute path to the file on the disk. This is intended
-	// for the backend use only and should not be sent to the frontend.
+	// Path is the relative path to the file on the disk. The path to the
+	// storage is used with the file path.
+	//
+	// This is intended for the backend use only and should not be sent
+	// to the frontend.
 	Path string
 
 	// Size is the size of the file.
@@ -68,49 +74,79 @@ type File struct {
 	// This must be in UTC.
 	ModifiedOn time.Time `json:"modifedOn"`
 
-	// DeletedOn is the time when the file is set to be deleted. The acutal
+	// DeletedOn is the time when the file is set to be deleted. The actual
 	// deletion occurs after a certain amount of time has passed
 	// since the marked deletion time. This value can be nil.
 	// This must be in UTC.
 	DeletedOn *time.Time `json:"deletedOn"`
+
+	// UploadInProgress is the status of the file if it is currently
+	// in an uploading process. If it is true, then its intention is
+	// to prevent the front end from showing the file.
+	UploadInProgress bool `json:"uploadInProgress"`
+
+	// UniqueHash is a SHA256 hash of the following string concatenation:
+	// 	- account id + file name + file extension + parent ID
+	//
+	// This is used to keep files unique in the database if they
+	// have the same parent ID under an account.
+	UniqueHash string `json:"uniqueHash"`
 }
 
 // FileResponse is the struct representing a File object
 // from the backend. It is the same struct as File, excluding
-// the field FilePath and OwnerID.
+// the field FilePath, OwnerID, and UniqueHash.
 type FileResponse struct {
-	Name       string     `json:"fileName"`
-	Type       FileType   `json:"fileType"`
-	FileID     string     `json:"fileID"`
-	Extension  string     `json:"extension"`
-	ParentID   string     `json:"parentID"`
-	Size       int64      `json:"fileSize"`
-	ModifiedOn time.Time  `json:"modifedOn"`
-	DeletedOn  *time.Time `json:"deletedOn"`
+	Name             string     `json:"fileName"`
+	Type             FileType   `json:"fileType"`
+	FileID           string     `json:"fileID"`
+	Extension        string     `json:"extension"`
+	ParentID         string     `json:"parentID"`
+	Size             int64      `json:"fileSize"`
+	ModifiedOn       time.Time  `json:"modifedOn"`
+	DeletedOn        *time.Time `json:"deletedOn"`
+	UploadInProgress bool       `json:"uploadInProgress"`
 }
 
 // NewFile creates a new File with the file ID, modified date,
 // and deleted date having their values handled in the constructor.
+//
+// The following fields will automatically be generated and their side effects:
+//   - Extension: automatically gets stripped of leading periods
+//   - UniqueHash: concatenation of account id, file name, file extension, and parent ID (in order)
+//   - Path: <account ID>/<file ID>
+//
+// The path will be an empty path if the file type is a directory.
 func NewFile(accountId string,
 	fileName string,
 	fileType FileType,
 	fileExt string,
-	filePath string,
 	fileSize int64,
-	parentId string) File {
+	parentId string,
+	uploadInProg bool) File {
 	id := uuid.NewString()
 
+	fileExt = strings.TrimPrefix(fileExt, ".")
+	hash := utils.HashString(accountId, fileName, fileExt, parentId)
+
+	path := ""
+	if fileType != FileTypeDir {
+		path = fmt.Sprintf("%s/%s", accountId, id)
+	}
+
 	return File{
-		OwnerID:    accountId,
-		Name:       fileName,
-		Type:       fileType,
-		FileID:     id,
-		Extension:  fileExt,
-		ParentID:   parentId,
-		Path:       filePath,
-		Size:       fileSize,
-		ModifiedOn: time.Now().UTC(),
-		DeletedOn:  nil,
+		OwnerID:          accountId,
+		Name:             fileName,
+		Type:             fileType,
+		FileID:           id,
+		Extension:        fileExt,
+		ParentID:         parentId,
+		Path:             path,
+		Size:             fileSize,
+		ModifiedOn:       time.Now().UTC(),
+		DeletedOn:        nil,
+		UploadInProgress: uploadInProg,
+		UniqueHash:       hash,
 	}
 }
 
@@ -149,6 +185,8 @@ func FlattenFile(files ...File) []any {
 		appendFunc(file.Size)
 		appendFunc(file.ModifiedOn)
 		appendFunc(file.DeletedOn)
+		appendFunc(file.UploadInProgress)
+		appendFunc(file.UniqueHash)
 	}
 
 	return out
@@ -186,6 +224,8 @@ func (f *File) StringClean() string {
 	write(ColumnParentID, f.ParentID)
 	write(ColumnFileSize, f.Size)
 	write(ColumnModifiedOn, f.ModifiedOn.UTC().String())
+	write(ColumnUploadInProgress, f.UploadInProgress)
+	write(ColumnUniqueHash, f.UniqueHash)
 
 	var deletedOn any
 	if f.DeletedOn != nil {
@@ -203,14 +243,15 @@ func (f *File) StringClean() string {
 // sending confidential fields.
 func (f *File) ToFileResponse() *FileResponse {
 	return &FileResponse{
-		Name:       f.Name,
-		Type:       f.Type,
-		FileID:     f.FileID,
-		Extension:  f.Extension,
-		ParentID:   f.ParentID,
-		Size:       f.Size,
-		ModifiedOn: f.ModifiedOn,
-		DeletedOn:  f.DeletedOn,
+		Name:             f.Name,
+		Type:             f.Type,
+		FileID:           f.FileID,
+		Extension:        f.Extension,
+		ParentID:         f.ParentID,
+		Size:             f.Size,
+		ModifiedOn:       f.ModifiedOn,
+		DeletedOn:        f.DeletedOn,
+		UploadInProgress: f.UploadInProgress,
 	}
 }
 
@@ -256,17 +297,18 @@ func walk(root string) ([]File, error) {
 				parentID = pID
 			}
 
-			f := File{
-				Name:       info.Name(),
-				Type:       fileType,
-				Size:       info.Size(),
-				Extension:  filepath.Ext(p),
-				Path:       p,
-				FileID:     id,
-				ParentID:   parentID,
-				ModifiedOn: info.ModTime().UTC(),
-				OwnerID:    accountID,
-			}
+			f := NewFile(
+				accountID,
+				info.Name(),
+				fileType,
+				filepath.Ext(p),
+				info.Size(),
+				parentID,
+				false,
+			)
+			// manually changiing these due to the way walk is parsed
+			f.FileID = id
+			f.Path = fmt.Sprintf("%s/%s", accountID, id)
 
 			fs = append(fs, f)
 		}
