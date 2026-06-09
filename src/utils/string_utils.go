@@ -1,6 +1,11 @@
 package utils
 
-import "unicode"
+import (
+	"crypto/sha256"
+	"fmt"
+	"strings"
+	"unicode"
+)
 
 // ToUpperFirstChar uppercases the first letter of the string.
 func ToUpperFirstChar(s string) string {
@@ -13,4 +18,14 @@ func ToUpperFirstChar(s string) string {
 	out := string(runes)
 
 	return out
+}
+
+// HashString joins the given strings and returns a hash
+// of the string.
+func HashString(s ...string) string {
+	joined := strings.Join(s, "")
+
+	hash := sha256.Sum256([]byte(joined))
+
+	return fmt.Sprintf("%x", hash)
 }
