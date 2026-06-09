@@ -435,6 +435,7 @@ func TestCompleteUploadFile(t *testing.T) {
 
 	fi, err := ap.gateway.File.GetFile(tests.DbRowInfo.AccountID, apres.Output.FileID)
 	assert.Nil(t, err)
+	assert.Equal(t, fi.Name, fileName)
 
 	fiPath := filepath.Join(gw.Dir.Storage, fi.Path)
 
