@@ -4,29 +4,47 @@ import type { SetBlurFunc } from "../../../ui/BackgroundBlur";
 type FileOpButtonProps = {
     setBlur: SetBlurFunc
     setFileOp: (t: FileOperation) => void
+    fileUploadRef: React.RefObject<HTMLInputElement | null>
 }
 
 type MenuButton = {
     text: string
     onClickFunc: (op: FileOperation) => void,
+    operation: FileOperation,
 }
 
-export type FileOperation = null | "addFolder";
+export type FileOperation = "" | "addFolder";
 
 /**
  * Used to open the context menu to perform different file operations.
  * @returns The button for file operations
  */
-export default function FileOpButton({setBlur, setFileOp}: FileOpButtonProps): JSX.Element{
+export default function FileOpButton({setBlur, setFileOp, fileUploadRef}: FileOpButtonProps): JSX.Element{
     const [revealMenu, setRevealMenu] = useState(false);
     const menuDivRef = useRef(null);
+
+    const onDefaultClickOp = (op: FileOperation) => setFileOp(op);
     
-    const MENU_BUTTONS_REF = useRef<Array<MenuButton>>([
+    const MENU_BUTTONS: Array<MenuButton> = [
         {
             text: "New folder",
-            onClickFunc: (op: FileOperation) => setFileOp(op),
+            onClickFunc: onDefaultClickOp,
+            operation: "addFolder",
         },
-    ]);
+        {
+            text: "New upload",
+            onClickFunc: (op: FileOperation) => {
+                setFileOp(op);
+                if(!fileUploadRef.current){
+                    return;
+                }
+                
+                const inputEle = fileUploadRef.current;
+                inputEle.click(); 
+            },
+            operation: "",
+        }
+    ];
 
     useMenuListener(setRevealMenu, menuDivRef);
 
@@ -53,10 +71,10 @@ export default function FileOpButton({setBlur, setFileOp}: FileOpButtonProps): J
                 <div className="w-50 absolute p-2 bg-white border"
                 ref={menuDivRef}>
                     <div>
-                    {MENU_BUTTONS_REF.current.map((btn) => (
+                    {MENU_BUTTONS.map((btn) => (
                         <button
                         className="w-full hover:bg-gray-400/50"
-                        onClick={() => hideMenuWrapper(btn.onClickFunc, "addFolder")}>
+                        onClick={() => hideMenuWrapper(btn.onClickFunc, btn.operation)}>
                             {btn.text}
                         </button>
                     ))} 
