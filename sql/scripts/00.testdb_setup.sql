@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS File(
     FileSize int NOT NULL,
     ModifiedOn DATETIME NOT NULL,
     DeletedOn DATETIME,
+    UploadInProgress BOOL DEFAULT 1,
+    UniqueHash varchar(64) NOT NULL,
     PRIMARY KEY (FileID),
     CONSTRAINT FK_File_UserAccount
         FOREIGN KEY (AccountID) 
@@ -29,12 +31,10 @@ CREATE TABLE IF NOT EXISTS File(
 );
 
 -- prevents duplicate entries for normal files who share
--- the same parent ID
+-- the same parent ID on the same account
 -- folders can have duplicate entries
 CREATE UNIQUE INDEX FileUniqueIndex ON File(
-    (CASE WHEN FileType = 'file' THEN FileName END),
-    (CASE WHEN FileType = 'file' THEN ParentID END),
-    (CASE WHEN FileType = 'file' THEN Extension END)
+    (CASE WHEN FileType = 'file' THEN UniqueHash END)
 );
 
 CREATE TABLE IF NOT EXISTS Session(
@@ -67,12 +67,14 @@ INSERT INTO File
         "test1",
         "file",
         "randomfileidhere",
-        ".txt",
+        "txt",
         "",
         "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70/randomfileidhere",
         0,
         NOW(),
-        NULL
+        NULL,
+        0,
+        "f3bf6020372579f86aadbb42a6416de73463cef330a84c6a1cf493eea411a2dd"
     ),
     (
         "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70",
@@ -84,19 +86,23 @@ INSERT INTO File
         "",
         0,
         NOW(),
-        NULL
+        NULL,
+        0,
+        ""
     ),
     (
         "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70",
         "test2",
         "file",
         "anotherfileidhere",
-        ".txt",
+        "txt",
         "randomfolderidhere",
         "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70/anotherfileidhere",
         0,
         NOW(),
-        NULL
+        NULL,
+        0,
+        "3b3cfd0153176b8c917c784adbcb6026b004f3514af0711b4c19f50829969f9d"
     );
 INSERT INTO Session
     VALUES
