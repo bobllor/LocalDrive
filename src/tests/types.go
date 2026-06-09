@@ -16,4 +16,5 @@ type TestDbRow struct {
 	SessionID  string
 	FileID     string
 	FileName   string
+	UniqueHash string
 }

@@ -20,6 +20,7 @@ var DbRowInfo = TestDbRow{
 	SessionID:  "7ca90f85-b1e0-4214-8ff6-4e3720cc8078",
 	FileID:     "randomfileidhere",
 	FileName:   "test1",
+	UniqueHash: "f3bf6020372579f86aadbb42a6416de73463cef330a84c6a1cf493eea411a2dd",
 }
 
 // TestPassword is the test password used to create the PhcString for
