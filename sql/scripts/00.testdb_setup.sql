@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS File(
     FileSize int NOT NULL,
     ModifiedOn DATETIME NOT NULL,
     DeletedOn DATETIME,
-    UploadInProgress BOOL DEFAULT 1,
+    UploadStatus varchar(10) NOT NULL,
     UniqueHash varchar(64) NOT NULL,
     PRIMARY KEY (FileID),
     CONSTRAINT FK_File_UserAccount
@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS File(
 -- prevents duplicate entries for normal files who share
 -- the same parent ID on the same account
 -- folders can have duplicate entries
+-- the unique hash is a sha256 of: account id + file name + file extension + parent id
 CREATE UNIQUE INDEX FileUniqueIndex ON File(
     (CASE WHEN FileType = 'file' THEN UniqueHash END)
 );
@@ -73,7 +74,7 @@ INSERT INTO File
         0,
         NOW(),
         NULL,
-        0,
+        "completed",
         "f3bf6020372579f86aadbb42a6416de73463cef330a84c6a1cf493eea411a2dd"
     ),
     (
@@ -87,7 +88,7 @@ INSERT INTO File
         0,
         NOW(),
         NULL,
-        0,
+        "completed",
         ""
     ),
     (
@@ -101,7 +102,7 @@ INSERT INTO File
         0,
         NOW(),
         NULL,
-        0,
+        "completed",
         "3b3cfd0153176b8c917c784adbcb6026b004f3514af0711b4c19f50829969f9d"
     );
 INSERT INTO Session
