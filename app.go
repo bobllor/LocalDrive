@@ -165,5 +165,10 @@ func createServer(gw *dbgateway.Gateway, logger *gologger.Logger, serverAddress 
 	serv.RegisterHandler(api.FilePostDownloadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.DownloadFile))
 	serv.RegisterHandler(api.FilePostAddFolderRoute, ap.CreateAuthMiddleware(ap.FileHandler.PostAddFolder))
 
+	// file uploading
+	serv.RegisterHandler(api.FilePostUploadFileChunkRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileChunk))
+	serv.RegisterHandler(api.FilePostUploadFileCompleteRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileComplete))
+	serv.RegisterHandler(api.FilePostUploadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadGenerateId))
+
 	return serv, nil
 }
