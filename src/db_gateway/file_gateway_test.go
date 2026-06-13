@@ -113,7 +113,7 @@ func TestAddFileDuplicate(t *testing.T) {
 			"txt",
 			0,
 			"",
-			false,
+			file.UploadPending,
 		)
 
 		// not needed for this test run but using just in case
@@ -134,7 +134,7 @@ func TestAddFileDuplicate(t *testing.T) {
 			"txt",
 			0,
 			"parentid1",
-			false,
+			file.UploadPending,
 		)
 
 		t.Cleanup(func() {
@@ -165,7 +165,7 @@ func TestAddFileDuplicate(t *testing.T) {
 			"txt",
 			0,
 			"",
-			false,
+			file.UploadPending,
 		)
 
 		err = gw.File.AddFile(fi)
@@ -188,7 +188,7 @@ func TestAddFileDuplicate(t *testing.T) {
 			"",
 			0,
 			"",
-			false,
+			file.UploadCompleted,
 		)
 
 		folder2 := file.NewFile(
@@ -198,7 +198,7 @@ func TestAddFileDuplicate(t *testing.T) {
 			"",
 			0,
 			"",
-			false,
+			file.UploadCompleted,
 		)
 
 		t.Cleanup(func() {

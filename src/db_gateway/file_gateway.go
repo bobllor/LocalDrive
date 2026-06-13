@@ -50,7 +50,7 @@ func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, erro
 		file.ColumnFileID, file.ColumnFileExtension,
 		file.ColumnParentID, file.ColumnFileSize,
 		file.ColumnModifiedOn, file.ColumnDeletedOn,
-		file.ColumnUploadInProgress,
+		file.ColumnUploadStatus,
 	).Where().Equal(file.ColumnFileOwnerID, fileOwnerID).Build()
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to build query: %v | Query: %s | Args: %d", err, query, len(args))
@@ -159,7 +159,7 @@ func (f *FileGateway) AddFile(files ...file.File) error {
 		file.ColumnFileSize,
 		file.ColumnModifiedOn,
 		file.ColumnDeletedOn,
-		file.ColumnUploadInProgress,
+		file.ColumnUploadStatus,
 		file.ColumnUniqueHash,
 	).Args(file.FlattenFile(files...)...).Build()
 	if err != nil {
@@ -385,7 +385,7 @@ func (f *FileGateway) getFiles(rows *sql.Rows) ([]file.File, error) {
 			&f.Size,
 			&f.ModifiedOn,
 			&f.DeletedOn,
-			&f.UploadInProgress,
+			&f.UploadStatus,
 			&f.UniqueHash,
 		)
 

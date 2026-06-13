@@ -14,20 +14,20 @@ import (
 const (
 	// FileColumnSize is the amount of columns used for the Files table.
 	// It is equal to the public fields of the [File] struct.
-	ColumnSize             int    = 12
-	TableName              string = "File"
-	ColumnFileOwnerID      string = "AccountID" // ColumnFileOwnerID is the column name for the file's owner account ID.
-	ColumnFileName         string = "FileName"
-	ColumnFileType         string = "FileType"
-	ColumnFileID           string = "FileID"
-	ColumnFileExtension    string = "Extension"
-	ColumnParentID         string = "ParentID"
-	ColumnFilePath         string = "FilePath"
-	ColumnFileSize         string = "FileSize"
-	ColumnModifiedOn       string = "ModifiedOn"
-	ColumnDeletedOn        string = "DeletedOn"
-	ColumnUploadInProgress string = "UploadInProgress"
-	ColumnUniqueHash       string = "UniqueHash"
+	ColumnSize          int    = 12
+	TableName           string = "File"
+	ColumnFileOwnerID   string = "AccountID" // ColumnFileOwnerID is the column name for the file's owner account ID.
+	ColumnFileName      string = "FileName"
+	ColumnFileType      string = "FileType"
+	ColumnFileID        string = "FileID"
+	ColumnFileExtension string = "Extension"
+	ColumnParentID      string = "ParentID"
+	ColumnFilePath      string = "FilePath"
+	ColumnFileSize      string = "FileSize"
+	ColumnModifiedOn    string = "ModifiedOn"
+	ColumnDeletedOn     string = "DeletedOn"
+	ColumnUploadStatus  string = "UploadStatus"
+	ColumnUniqueHash    string = "UniqueHash"
 )
 
 type FileType string
@@ -35,6 +35,14 @@ type FileType string
 const (
 	FileTypeDir  FileType = "dir"
 	FileTypeFile FileType = "file"
+)
+
+type UploadStatus string
+
+const (
+	UploadCompleted = "completed"
+	UploadFailed    = "failed"
+	UploadPending   = "pending"
 )
 
 type File struct {
@@ -80,10 +88,9 @@ type File struct {
 	// This must be in UTC.
 	DeletedOn *time.Time `json:"deletedOn"`
 
-	// UploadInProgress is the status of the file if it is currently
-	// in an uploading process. If it is true, then its intention is
-	// to prevent the front end from showing the file.
-	UploadInProgress bool `json:"uploadInProgress"`
+	// UploadStatus is the upload status. It is one of three values:
+	// completed, failed, or pending.
+	UploadStatus UploadStatus `json:"uploadStatus"`
 
 	// UniqueHash is a SHA256 hash of the following string concatenation:
 	// 	- account id + file name + file extension + parent ID
@@ -97,15 +104,15 @@ type File struct {
 // from the backend. It is the same struct as File, excluding
 // the field FilePath, OwnerID, and UniqueHash.
 type FileResponse struct {
-	Name             string     `json:"fileName"`
-	Type             FileType   `json:"fileType"`
-	FileID           string     `json:"fileID"`
-	Extension        string     `json:"extension"`
-	ParentID         string     `json:"parentID"`
-	Size             int64      `json:"fileSize"`
-	ModifiedOn       time.Time  `json:"modifedOn"`
-	DeletedOn        *time.Time `json:"deletedOn"`
-	UploadInProgress bool       `json:"uploadInProgress"`
+	Name         string       `json:"fileName"`
+	Type         FileType     `json:"fileType"`
+	FileID       string       `json:"fileID"`
+	Extension    string       `json:"extension"`
+	ParentID     string       `json:"parentID"`
+	Size         int64        `json:"fileSize"`
+	ModifiedOn   time.Time    `json:"modifedOn"`
+	DeletedOn    *time.Time   `json:"deletedOn"`
+	UploadStatus UploadStatus `json:"uploadStatus"`
 }
 
 // NewFile creates a new File with the file ID, modified date,
@@ -115,6 +122,7 @@ type FileResponse struct {
 //   - Extension: automatically gets stripped of leading periods
 //   - UniqueHash: concatenation of account id, file name, file extension, and parent ID (in order)
 //   - Path: <account ID>/<file ID>
+//   - Status: pending
 //
 // The path will be an empty path if the file type is a directory.
 func NewFile(accountId string,
@@ -123,7 +131,7 @@ func NewFile(accountId string,
 	fileExt string,
 	fileSize int64,
 	parentId string,
-	uploadInProg bool) File {
+	status UploadStatus) File {
 	id := uuid.NewString()
 
 	fileExt = strings.TrimPrefix(fileExt, ".")
@@ -135,18 +143,18 @@ func NewFile(accountId string,
 	}
 
 	return File{
-		OwnerID:          accountId,
-		Name:             fileName,
-		Type:             fileType,
-		FileID:           id,
-		Extension:        fileExt,
-		ParentID:         parentId,
-		Path:             path,
-		Size:             fileSize,
-		ModifiedOn:       time.Now().UTC(),
-		DeletedOn:        nil,
-		UploadInProgress: uploadInProg,
-		UniqueHash:       hash,
+		OwnerID:      accountId,
+		Name:         fileName,
+		Type:         fileType,
+		FileID:       id,
+		Extension:    fileExt,
+		ParentID:     parentId,
+		Path:         path,
+		Size:         fileSize,
+		ModifiedOn:   time.Now().UTC(),
+		DeletedOn:    nil,
+		UploadStatus: status,
+		UniqueHash:   hash,
 	}
 }
 
@@ -185,7 +193,7 @@ func FlattenFile(files ...File) []any {
 		appendFunc(file.Size)
 		appendFunc(file.ModifiedOn)
 		appendFunc(file.DeletedOn)
-		appendFunc(file.UploadInProgress)
+		appendFunc(file.UploadStatus)
 		appendFunc(file.UniqueHash)
 	}
 
@@ -224,7 +232,7 @@ func (f *File) StringClean() string {
 	write(ColumnParentID, f.ParentID)
 	write(ColumnFileSize, f.Size)
 	write(ColumnModifiedOn, f.ModifiedOn.UTC().String())
-	write(ColumnUploadInProgress, f.UploadInProgress)
+	write(ColumnUploadStatus, f.UploadStatus)
 	write(ColumnUniqueHash, f.UniqueHash)
 
 	var deletedOn any
@@ -243,15 +251,15 @@ func (f *File) StringClean() string {
 // sending confidential fields.
 func (f *File) ToFileResponse() *FileResponse {
 	return &FileResponse{
-		Name:             f.Name,
-		Type:             f.Type,
-		FileID:           f.FileID,
-		Extension:        f.Extension,
-		ParentID:         f.ParentID,
-		Size:             f.Size,
-		ModifiedOn:       f.ModifiedOn,
-		DeletedOn:        f.DeletedOn,
-		UploadInProgress: f.UploadInProgress,
+		Name:         f.Name,
+		Type:         f.Type,
+		FileID:       f.FileID,
+		Extension:    f.Extension,
+		ParentID:     f.ParentID,
+		Size:         f.Size,
+		ModifiedOn:   f.ModifiedOn,
+		DeletedOn:    f.DeletedOn,
+		UploadStatus: f.UploadStatus,
 	}
 }
 
@@ -304,7 +312,7 @@ func walk(root string) ([]File, error) {
 				filepath.Ext(p),
 				info.Size(),
 				parentID,
-				false,
+				UploadPending,
 			)
 			// manually changiing these due to the way walk is parsed
 			f.FileID = id
