@@ -186,7 +186,7 @@ func (fh *FileHandler) UploadGenerateId(w http.ResponseWriter, r *http.Request) 
 		strings.TrimPrefix(meta.FileExtension, "."),
 		int64(meta.FileSize),
 		meta.FileParentId,
-		true,
+		file.UploadPending,
 	)
 
 	fh.util.Log.Debugf("Generated file ID: %s", entry.FileID)
@@ -309,6 +309,10 @@ func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
 	defer chunkFile.Close()
 	defer r.Body.Close()
 
+	contentType := r.Header.Get("content-type")
+
+	fh.util.Log.Debugf("Content length: %d | Content type: %s", r.ContentLength, contentType)
+
 	n, err := io.Copy(chunkFile, r.Body)
 	if err != nil {
 		fh.util.Log.Criticalf("Failed to write response body to file: %v", err)
@@ -322,6 +326,13 @@ func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
 
 	cinfo.ChunkIndexes[chunkIndex] = chunkFile.Name()
 	fh.util.Log.Infof("Wrote %d bytes to %s", n, chunkFile.Name())
+
+	wn, err := WriteResponse(w, NewApiResponse(true))
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "Failed to write response: %v", err)
+	}
+
+	fh.util.Log.Infof("Wrote %d bytes to response for chunk upload", wn)
 }
 
 // UploadFileComplete is used to signal that the uploading files for a upload ID has been completed.
@@ -422,9 +433,9 @@ func (fh *FileHandler) UploadFileComplete(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	// updating the progress state to false since upload is complete
-	cinfo.FileInfo.UploadInProgress = false
-	upErr := fh.gateway.File.UpdateFile(userContext.AccountId, cinfo.FileInfo.FileID, file.ColumnUploadInProgress, cinfo.FileInfo.UploadInProgress)
+	// status update is complete
+	cinfo.FileInfo.UploadStatus = file.UploadCompleted
+	upErr := fh.gateway.File.UpdateFile(userContext.AccountId, cinfo.FileInfo.FileID, file.ColumnUploadStatus, cinfo.FileInfo.UploadStatus)
 	if upErr != nil {
 		// errors will not cancel, the file will still be shown on the front end thanks to the response.
 		// background workers will resolve the issue periodically.
@@ -478,7 +489,7 @@ func (fh *FileHandler) PostAddFolder(w http.ResponseWriter, r *http.Request) {
 		"",
 		0,
 		folderReqBody.ParentId,
-		false,
+		file.UploadCompleted,
 	)
 
 	dbErr := fh.gateway.File.AddFile(folderFile)
