@@ -32,7 +32,14 @@ type FileStore = {
      * @returns 
      */
     addFolder: (folderName: string, parentId?: string) => Promise<ResponseStatus>,
+    /**
+     * Adds a new FileResponse to the store.
+     * @returns 
+     */
+    addFileResponse: (file: FileResponse, parentId?: string) => Promise<void>,
 }
+
+type UploadStatus = "completed" | "failed" | "pending";
 
 /**
  * The type representing the File data of the database.
@@ -47,12 +54,12 @@ export type FileResponse = {
     fileSize: number
     modifiedOn: Date
     deletedOn?: Date
-    uploadInProgress: boolean
+    uploadStatus: UploadStatus
 }
 
 export const useFileStore = create<FileStore>((set, get) => ({
     files: {},
-    setFiles: async (parentId ?: string) => {
+    setFiles: async (parentId?: string) => {
         const key = getParentIdUndefined(parentId);
         const route = parentId ? `/api/storage/folder/${key}` : "/api/storage";
         const baseFiles = get().files;
@@ -84,6 +91,14 @@ export const useFileStore = create<FileStore>((set, get) => ({
         console.debug(`Parent ID: ${key}`);
 
         return files[key];
+    },
+    addFileResponse: async (file: FileResponse, parentId?: string) => {
+        const key = getParentIdUndefined(parentId); 
+        
+        const files = get().getFiles(parentId).map(v => v);
+        files.push(file);
+
+        set(st => ({...st, files: {...st.files, [key]: files}}));
     },
     addFolder: async (folderName: string, parentId?: string) => {
         const reqBody = {
