@@ -11,6 +11,7 @@ type MenuButton = {
     text: string
     onClickFunc: (op: FileOperation) => void,
     operation: FileOperation,
+    id: string,
 }
 
 export type FileOperation = "" | "addFolder";
@@ -30,6 +31,7 @@ export default function FileOpButton({setBlur, setFileOp, fileUploadRef}: FileOp
             text: "New folder",
             onClickFunc: onDefaultClickOp,
             operation: "addFolder",
+            id: "addFolderButton",
         },
         {
             text: "New upload",
@@ -43,6 +45,7 @@ export default function FileOpButton({setBlur, setFileOp, fileUploadRef}: FileOp
                 inputEle.click(); 
             },
             operation: "",
+            id: "newUploadButton",
         }
     ];
 
@@ -73,6 +76,7 @@ export default function FileOpButton({setBlur, setFileOp, fileUploadRef}: FileOp
                     <div>
                     {MENU_BUTTONS.map((btn) => (
                         <button
+                        key={btn.id}
                         className="w-full hover:bg-gray-400/50"
                         onClick={() => hideMenuWrapper(btn.onClickFunc, btn.operation)}>
                             {btn.text}
