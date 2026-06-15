@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS File(
     FileSize int NOT NULL,
     ModifiedOn DATETIME NOT NULL,
     DeletedOn DATETIME,
-    UploadStatus varchar(10) NOT NULL,
+    UploadStatus varchar(10) DEFAULT 'pending' NOT NULL,
     UniqueHash varchar(64) NOT NULL,
     PRIMARY KEY (FileID),
     CONSTRAINT FK_File_UserAccount
@@ -34,8 +34,16 @@ CREATE TABLE IF NOT EXISTS File(
 -- the same parent ID on the same account
 -- folders can have duplicate entries
 -- the unique hash is a sha256 of: account id + file name + file extension + parent id
+-- a clean up worker will be made to handle failed or pending rows, in addition to their stored
+-- chunks or file.
 CREATE UNIQUE INDEX FileUniqueIndex ON File(
-    (CASE WHEN FileType = 'file' THEN UniqueHash END)
+    (
+        CASE 
+            WHEN FileType = 'file'
+                AND UploadStatus IN ('completed', 'pending')
+            THEN UniqueHash 
+        END
+    )
 );
 
 CREATE TABLE IF NOT EXISTS Session(
