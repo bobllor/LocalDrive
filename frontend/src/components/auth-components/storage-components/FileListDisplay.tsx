@@ -35,6 +35,11 @@ const hoverCss = "hover:bg-gray-400/45";
 export default function FileListDisplay({files}: FileListDisplayProps): JSX.Element{
     const clearFileIds = useFileListStore(state => state.clearFileIds);
 
+    // files in progress will not be updated
+    const filesMap = files.filter(fileObj => {
+        return fileObj.uploadStatus === "completed";
+    });
+
     return (
         <table 
         className="table-auto w-full">
@@ -54,11 +59,11 @@ export default function FileListDisplay({files}: FileListDisplayProps): JSX.Elem
             </thead>
             <tbody>
                 {
-                    files.map((fileObj, i) => 
-                        <React.Fragment key={i}>
+                    filesMap.map(fileObj => (
+                        <React.Fragment key={fileObj.fileID}>
                             <FileTableRow fileObj={fileObj} />
                         </React.Fragment>
-                    )
+                    ))
                 }
             </tbody>
         </table>
