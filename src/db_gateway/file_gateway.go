@@ -109,7 +109,7 @@ func (f *FileGateway) GetFile(fileOwnerId string, fileId string) (*file.File, er
 //
 // Upon update, the modified time will also be updated to the time it was called.
 func (f *FileGateway) UpdateFile(fileOwnerID string, fileId, column string, arg any) error {
-	now := time.Now().UTC()
+	now := utils.NowUTC()
 	query, args, err := sqlquery.Update(file.TableName, file.ColumnModifiedOn, column).Args(now, arg).
 		Where().Equal(file.ColumnFileOwnerID, fileOwnerID).
 		And().Equal(file.ColumnFileID, fileId).Build()
@@ -337,6 +337,27 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 	}
 
 	return files, nil
+}
+
+// UpdateUploadStatus updates the upload status to a given status.
+//
+// This does not update the modified on time.
+func (f *FileGateway) UpdateUploadStatus(accountId, fileId string, status file.UploadStatus) error {
+	q, args, err := sqlquery.Update(file.TableName, file.ColumnUploadStatus).Args(status).
+		Where().Equal(file.ColumnFileOwnerID, accountId).And().Equal(file.ColumnFileID, fileId).Build()
+	if err != nil {
+		return logSqlBuildError(f.deps.Log, err, q, args)
+	}
+
+	res, err := execQuery(f.database, q, args...)
+	if err != nil {
+		return logQueryError(f.deps.Log, err, q)
+	}
+
+	f.deps.Log.Infof("Updated file (%s) upload status to '%s'", fileId, status)
+	logResultRows(f.deps.Log, res)
+
+	return nil
 }
 
 // validateFileExists checks if the folder ID has the correct formatting and

@@ -532,6 +532,29 @@ func TestRenameFileName(t *testing.T) {
 	assert.Equal(t, fi.UniqueHash, tests.DbRowInfo.UniqueHash)
 }
 
+func TestUpdateUploadStatus(t *testing.T) {
+	gw, db := NewTestGatewayDB(t)
+
+	f1 := file.NewFile(tests.DbRowInfo.AccountID, "filename1234", file.FileTypeFile,
+		"pdf", 0, "", file.UploadPending)
+
+	t.Cleanup(func() {
+		DropRows(db, file.TableName, file.ColumnFileID, f1.FileID)
+	})
+
+	err := gw.File.AddFile(f1)
+	assert.Nil(t, err)
+
+	err = gw.File.UpdateUploadStatus(tests.DbRowInfo.AccountID, f1.FileID, file.UploadFailed)
+	assert.Nil(t, err)
+
+	bf, err := gw.File.GetFile(tests.DbRowInfo.AccountID, f1.FileID)
+	assert.Nil(t, err)
+	assert.NotNil(t, bf)
+
+	assert.Equal(t, string(bf.UploadStatus), string(file.UploadFailed))
+}
+
 // getFileDb gets the [FileGateway] for the test database.
 // If an error occurs, it will return an error.
 //
