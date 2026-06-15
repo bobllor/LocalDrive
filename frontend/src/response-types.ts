@@ -33,5 +33,13 @@ export type ResponseError = {
 /**
  * ReasonCode indicates what error type had occurred during the endpoint
  * call.
+ * 
+ * This is equal to the codes in the back end.
  */
-export type ReasonCode = "INTERNAL_ERROR" | "BAD_DATA" | "USER_ALREADY_EXISTS" | "BAD_USERNAME" | "BAD_PASSWORD" | "UNAUTHORIZED";
+export type ReasonCode = "INTERNAL_ERROR" | 
+    "BAD_DATA" | 
+    "USER_ALREADY_EXISTS" | 
+    "BAD_USERNAME" | 
+    "BAD_PASSWORD" | 
+    "UNAUTHORIZED" |
+    "DUPLICATE_DATA";
