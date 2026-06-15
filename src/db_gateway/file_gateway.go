@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/bobllor/cloud-project/src/file"
@@ -174,29 +175,48 @@ func (f *FileGateway) AddFile(files ...file.File) error {
 		return err
 	}
 
+	fileIds := []string{}
+	for _, f := range files {
+		fileIds = append(fileIds, f.FileID)
+	}
 	f.deps.Log.Infof("Successfully added %d files", len(files))
+	f.deps.Log.Debugf("Added file IDs: %s", strings.Join(fileIds, ","))
 	logResultRows(f.deps.Log, res)
 
 	return nil
 }
 
-// RenameFile renames a file to a new file name. This requires the fileId
-// in order to rename.
+// RenameFile renames a file to a new file name.
 //
-// This will also update the modified date time.
+// The unique hash will be regenerated due to the name change. A duplication error can
+// occur if the file is the 'file' type and it exists with the same parent ID.
+// This will also update the modified date time to current time.
 func (f *FileGateway) RenameFile(accountId, fileId, newFileName string) error {
-	q, args, err := sqlquery.Update(file.TableName, file.ColumnFileName, file.ColumnModifiedOn).
-		Args(newFileName, time.Now().UTC()).Where().Equal(file.ColumnFileID, fileId).
-		And().Equal(file.ColumnFileOwnerID, accountId).Build()
-	if err != nil {
-		return logSqlBuildError(f.deps.Log, err, q, args)
-	}
+	q := fmt.Sprintf(`
+		UPDATE %s
+		SET %s = ?,
+			%s = SHA2(CONCAT(%s, '%s', %s, %s), 256),
+			%s = ?
+		WHERE %s = ? AND %s = ?`,
+		file.TableName,
+		file.ColumnFileName,
+		file.ColumnUniqueHash, file.ColumnFileOwnerID, newFileName, file.ColumnFileExtension, file.ColumnParentID,
+		file.ColumnModifiedOn,
+		file.ColumnFileOwnerID,
+		file.ColumnFileID,
+	)
+	args := []any{newFileName, utils.NowUTC(), accountId, fileId}
 
 	res, err := execQuery(f.database, q, args...)
+	if IsDuplicateSqlError(err) {
+		f.deps.Log.Warnf("Duplicate file rename for %s (-> %s)", fileId, newFileName)
+		return err
+	}
 	if err != nil {
 		return logQueryError(f.deps.Log, err, q)
 	}
 
+	f.deps.Log.Infof("Renamed file to %s (id=%s)", newFileName, fileId)
 	logResultRows(f.deps.Log, res)
 
 	return nil
