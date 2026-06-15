@@ -25,23 +25,33 @@ export async function validateSession(): Promise<boolean>{
  * 
  * @param path The non-base request URL, this can include the forward slash
  * @param method The method used on the request, by default it uses GET
- * @param body Any object that is being sent to the backend
+ * @param data Any object used in the body
+ * @param headers The headers with the request
  * @returns ResponseApi promise of type T
  */
-export async function fetchApi<T>(path: string, method: Method = "GET", data?: {}): Promise<ResponseApi<T>>{
+export async function fetchApi<T>(path: string, method: Method = "GET", data?: {}, headers?: {}): Promise<ResponseApi<T>>{
+    let body;
+
+    if(data instanceof Blob){
+        body = data;
+    }else if(data !== undefined){
+        body = JSON.stringify(data);
+    }
+
     const res = await fetch(createUrl(path), {
         method: method,
-        body: !data ? undefined : JSON.stringify(data),
+        body: body,
+        headers: headers,
         credentials: "include",
     });
 
-    const headers: Array<string> = [];
+    const resHeaders: Array<string> = [];
     res.headers.forEach((v, k) => {
-        headers.push(`${k}: ${v}`);
+        resHeaders.push(`${k}: ${v}`);
     })
 
     console.debug(`Response Headers: "${headers}" | Response type: ${res.type}`);
-    const r: ResponseApi<T> = await res.json()
+    const r: ResponseApi<T> = await res.json();
 
     // TODO: proper log, output is not logged
     console.debug(`Response status: ${r.status} | OK: ${res.ok}`);
