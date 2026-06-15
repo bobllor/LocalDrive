@@ -290,17 +290,56 @@ func TestUpdateModifiedFile(t *testing.T) {
 	assert.Equal(t, baseDate.Compare(newDate), -1)
 }
 
-func TestAddDuplicateFileError(t *testing.T) {
+func TestAddDuplicateFile(t *testing.T) {
 	fDb, err := getTestFileGateway()
 	assert.Nil(t, err)
 
-	f := file.File{
-		OwnerID: tests.DbRowInfo.AccountID,
-		FileID:  tests.DbRowInfo.FileID,
+	cases := []struct {
+		f     file.File
+		isErr bool
+		name  string
+	}{
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileName,
+				file.FileTypeFile, "txt", 0, "", file.UploadCompleted),
+			isErr: true,
+			name:  "Duplicate error existing file",
+		},
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileName,
+				file.FileTypeFile, "txt", 0, "", file.UploadFailed),
+			name: "Duplicate success failed upload",
+		},
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileName,
+				file.FileTypeFile, "txt", 0, "", file.UploadPending),
+			isErr: true,
+			name:  "Duplicate error pending existing file",
+		},
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileName,
+				file.FileTypeDir, "", 0, "", file.UploadCompleted),
+			name: "Duplicate folder name success",
+		},
 	}
 
-	err = fDb.AddFile(f)
-	assert.NotNil(t, err)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err = fDb.AddFile(c.f)
+
+			t.Cleanup(func() {
+				DropRows(fDb.database, file.TableName, file.ColumnFileID, c.f.FileID)
+			})
+
+			if c.isErr {
+				assert.NotNil(t, err)
+				assert.True(t, IsDuplicateSqlError(err))
+			} else {
+				assert.Nil(t, err)
+			}
+		})
+	}
+
 }
 
 func TestAddMissingOwnerIDFileError(t *testing.T) {
@@ -344,6 +383,67 @@ func TestUpdateFiles(t *testing.T) {
 	assert.NotEqual(t, fileRes.Name, baseName)
 
 	assert.Equal(t, baseTime.UTC().Compare(fileRes.ModifiedOn), -1)
+}
+
+func TestRenameDuplicateFiles(t *testing.T) {
+	gw, db := NewTestGatewayDB(t)
+
+	cases := []struct {
+		f           file.File
+		isErr       bool
+		newFileName string
+		name        string
+	}{
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, "afilename", file.FileTypeFile, "txt",
+				0, "", file.UploadCompleted),
+			newFileName: tests.DbRowInfo.FileName,
+			isErr:       true,
+			name:        "Rename file duplicate error",
+		},
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, "afilename", file.FileTypeFile, "txt",
+				0, "", file.UploadCompleted),
+			newFileName: tests.DbRowInfo.FileName,
+			isErr:       true,
+			name:        "Rename file pending duplicate error",
+		},
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, "afilename", file.FileTypeFile, "txt",
+				0, "12345", file.UploadCompleted),
+			newFileName: tests.DbRowInfo.FileName,
+			name:        "Rename file success different parent ID",
+		},
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, "afilename", file.FileTypeFile, "txt",
+				0, "12345", file.UploadCompleted),
+			newFileName: "different file name",
+			name:        "Rename file success",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Cleanup(func() {
+				DropRows(db, file.TableName, file.ColumnFileID, c.f.FileID)
+			})
+
+			err := gw.File.AddFile(c.f)
+			assert.Nil(t, err)
+
+			err = gw.File.RenameFile(tests.DbRowInfo.AccountID, c.f.FileID, c.newFileName)
+			if c.isErr {
+				assert.NotNil(t, err)
+				assert.True(t, IsDuplicateSqlError(err))
+			} else {
+				assert.Nil(t, err)
+				fi, err := gw.File.GetFile(c.f.OwnerID, c.f.FileID)
+				assert.Nil(t, err)
+				assert.NotNil(t, fi)
+				assert.Equal(t, fi.Name, c.newFileName)
+			}
+		})
+	}
 }
 
 func TestGetFilesByAccountIDAndParentFolder(t *testing.T) {
@@ -408,13 +508,28 @@ func TestRenameFileName(t *testing.T) {
 			file.TableName,
 			file.ColumnFileID,
 			tests.DbRowInfo.FileID,
-			[]string{file.ColumnFileName},
+			[]string{file.ColumnFileName, file.ColumnUniqueHash},
 			tests.DbRowInfo.FileName,
+			tests.DbRowInfo.UniqueHash,
 		)
 	})
 
+	// confirming the hash is changed
 	err = fg.RenameFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID, newFileName)
 	assert.Nil(t, err)
+	fi, err := fg.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
+	assert.Nil(t, err)
+
+	assert.NotEqual(t, fi.UniqueHash, tests.DbRowInfo.UniqueHash)
+
+	// confirming the hash is back to its default value
+	err = fg.RenameFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID, tests.DbRowInfo.FileName)
+	assert.Nil(t, err)
+	fi, err = fg.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
+	assert.Nil(t, err)
+	assert.NotNil(t, fi)
+
+	assert.Equal(t, fi.UniqueHash, tests.DbRowInfo.UniqueHash)
 }
 
 // getFileDb gets the [FileGateway] for the test database.
