@@ -215,6 +215,13 @@ func ToFileResponses(files ...File) []FileResponse {
 	return responses
 }
 
+// GenerateHash generates a SHA-256 hash for the File based on the
+// account ID, file name, file extension, and parent ID, concatenated
+// based on that order.
+func (f *File) GenerateHash() string {
+	return utils.HashString(f.OwnerID, f.Name, f.FileID, f.ParentID)
+}
+
 // StringClean returns a clean string representation of File excluding secrets.
 // This does not include the account ID.
 //
