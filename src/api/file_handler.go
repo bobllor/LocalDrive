@@ -58,12 +58,19 @@ type chunkInfo struct {
 	// uploads.
 	Dir string
 
+	// AccountId is the account ID of the file owner.
+	AccountId string
+
 	FileInfo file.File
 
 	// ChunkIndexes is a map of indexes used to track the chunks. The value
 	// is the absolute path to the written chunk.
 	ChunkIndexes map[int]string
 }
+
+// osCreate creates a file and returns an os.File for use.
+// This is the same as os.Create.
+var osCreate = os.Create
 
 func NewFileHandler(gw *dbgateway.Gateway, logger *gologger.Logger) *FileHandler {
 	return &FileHandler{
@@ -213,6 +220,7 @@ func (fh *FileHandler) UploadGenerateId(w http.ResponseWriter, r *http.Request) 
 	}
 
 	fh.uploadSessions[uploadId] = chunkInfo{
+		AccountId:    userContext.AccountId,
 		TotalChunks:  meta.TotalChunks,
 		FileInfo:     entry,
 		ChunkIndexes: make(map[int]string),
@@ -226,6 +234,9 @@ func (fh *FileHandler) UploadGenerateId(w http.ResponseWriter, r *http.Request) 
 // and the handler is expected to be called multiple times.
 // The chunks will be created in the temporary directory given in Gateway.Dir.Temp.
 //
+// If an error occurs while the chunk is writing, it will set the upload status of the file as
+// failed. A failed entry will only be considered if the writing failed
+//
 // The request header is expected to contain the request ID, metadata of the file information,
 // the total chunks expected, and the 0-indexed current chunk.
 // The response body is expected to be the bytes of the file uploaded.
@@ -238,6 +249,7 @@ func (fh *FileHandler) UploadGenerateId(w http.ResponseWriter, r *http.Request) 
 func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
 	uploadId := r.PathValue("id")
 	cinfo, ok := fh.uploadSessions[uploadId]
+	// typically this is either unauthorized or an invalid id is given
 	if !ok {
 		fh.util.HttpWriteCustomBadDataErrorf(w, "Invalid upload ID", ReasonBadRequestData, "Invalid upload session ID given: %s", uploadId)
 		return
@@ -253,7 +265,10 @@ func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
 	if chunkIndex+1 > cinfo.TotalChunks {
 		fh.util.HttpWriteCustomBadDataErrorf(
 			w,
-			"Invalid chunk index",
+			fmt.Sprintf(
+				"Invalid chunk index. Given chunk index is greater than the expected total chunks (%d>%d)",
+				chunkIndex+1, cinfo.TotalChunks,
+			),
 			ReasonBadRequestData,
 			"Invalid chunk given: chunk index %d is greater than total chunks %d",
 			chunkIndex,
@@ -262,11 +277,12 @@ func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if cinfo.TotalChunks == len(cinfo.ChunkIndexes) {
-		fh.util.HttpWriteBadDataError(w,
+		fh.util.HttpWriteCustomBadDataErrorf(
+			w,
+			"All chunks have been uploaded. Call the complete endpoint to finalize the upload.",
+			ReasonBadRequestData,
 			"Written chunks is equal to total chunks for session %s (%d=%d)",
-			uploadId,
-			cinfo.TotalChunks,
-			len(cinfo.ChunkIndexes),
+			uploadId, cinfo.TotalChunks, len(cinfo.ChunkIndexes),
 		)
 		return
 	}
@@ -278,6 +294,9 @@ func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
 	_, err = os.Stat(cinfo.Dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		fh.util.Log.Criticalf("Failed to stat directory %s: %v", cinfo.Dir, err)
+
+		fh.updateUploadStatusFailed(cinfo.AccountId, cinfo.FileInfo.FileID)
+
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 		return
 	}
@@ -288,7 +307,10 @@ func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
 		reqChunkDir := filepath.Join(fh.gateway.Dir.Temp, CHUNKS_DIR_NAME, uploadId)
 		err = os.MkdirAll(reqChunkDir, 0o700)
 		if err != nil {
+			fh.updateUploadStatusFailed(cinfo.AccountId, cinfo.FileInfo.FileID)
+
 			fh.util.Log.Criticalf("Failed to create directory: %v | Path: %s", err, reqChunkDir)
+
 			WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 			return
 		}
@@ -302,6 +324,8 @@ func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
 	chunkName := fmt.Sprintf("chunk-i0%d-*", chunkIndex)
 	chunkFile, err := os.CreateTemp(cinfo.Dir, chunkName)
 	if err != nil {
+		fh.updateUploadStatusFailed(cinfo.AccountId, cinfo.FileInfo.FileID)
+
 		fh.util.Log.Criticalf("Failed to create temporary chunk file: %v | Path: %s", err, cinfo.Dir)
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 		return
@@ -320,6 +344,8 @@ func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
 		if remErr != nil {
 			fh.util.Log.Criticalf("Failed to remove chunk file: %v", err)
 		}
+
+		fh.updateUploadStatusFailed(cinfo.AccountId, cinfo.FileInfo.FileID)
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 		return
 	}
@@ -327,9 +353,12 @@ func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
 	cinfo.ChunkIndexes[chunkIndex] = chunkFile.Name()
 	fh.util.Log.Infof("Wrote %d bytes to %s", n, chunkFile.Name())
 
+	// i dont think this should be considered a fail since the file
+	// is now on the device. for now just leave it alone.
 	wn, err := WriteResponse(w, NewApiResponse(true))
 	if err != nil {
 		fh.util.HttpWriteInternalError(w, "Failed to write response: %v", err)
+		return
 	}
 
 	fh.util.Log.Infof("Wrote %d bytes to response for chunk upload", wn)
@@ -348,6 +377,9 @@ func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
 //
 // Upon a successful upload, it will return a FileResponse response. This is used in the front end
 // to update the UI for the file.
+//
+// If there are any errors with disk operations, it will be considered a failed attempt and will
+// update the file entry to 'failed'.
 //
 // This requires the auth middleware.
 func (fh *FileHandler) UploadFileComplete(w http.ResponseWriter, r *http.Request) {
@@ -377,14 +409,20 @@ func (fh *FileHandler) UploadFileComplete(w http.ResponseWriter, r *http.Request
 	accountDir, err := fh.mkAccountDir(userContext.AccountId)
 	if err != nil {
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
+
+		fh.updateUploadStatusFailed(cinfo.AccountId, cinfo.FileInfo.FileID)
+
 		return
 	}
 	storedFilePath := filepath.Join(accountDir, cinfo.FileInfo.FileID)
 	fh.util.Log.Debugf("File path: %s", storedFilePath)
 
-	sf, err := os.Create(storedFilePath)
+	sf, err := osCreate(storedFilePath)
 	if err != nil {
-		fh.util.Log.Criticalf("Failed to open file: %v | Path: %s", err, storedFilePath)
+		fh.util.Log.Criticalf("Failed to create file: %v | Path: %s", err, storedFilePath)
+
+		fh.updateUploadStatusFailed(cinfo.AccountId, cinfo.FileInfo.FileID)
+
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 		return
 	}
@@ -426,8 +464,11 @@ func (fh *FileHandler) UploadFileComplete(w http.ResponseWriter, r *http.Request
 		}()
 
 		if err != nil {
-			fh.util.Log.Critical("Failed to merge chunk file")
+			fh.util.Log.Criticalf("Failed to merge chunk file: %v (chunk_index=%d)", err, i)
+
 			fh.removeFile(sf.Name())
+			fh.updateUploadStatusFailed(cinfo.AccountId, cinfo.FileInfo.FileID)
+
 			WriteErrorResponse(w, errMsg, code, reason)
 			return
 		}
@@ -566,8 +607,24 @@ func (fh *FileHandler) mkAccountDir(accountId string) (string, error) {
 	return path, nil
 }
 
+// updateUploadStatusFailed updates the upload status of the file entry of the
+// file ID owned by the account ID to 'failed'.
+//
+// This is used to ensure that the entry is 'failed' to allow duplicate entries
+// for retries.
+func (fh *FileHandler) updateUploadStatusFailed(accountId, fileId string) error {
+	err := fh.gateway.File.UpdateUploadStatus(accountId, fileId, file.UploadFailed)
+	if err != nil {
+		fh.util.Log.Criticalf("Failed to update upload status (file_id=%s): %v", fileId, err)
+
+		return err
+	}
+
+	return nil
+}
+
 // removeFile removes the file path and logs the result. Errors
-// that occur are not returned.
+// that occur are not returned but will be logged.
 func (fh *FileHandler) removeFile(path string) {
 	err := os.Remove(path)
 	if err != nil {
@@ -578,7 +635,7 @@ func (fh *FileHandler) removeFile(path string) {
 }
 
 // removeFiles removes the file paths and logs the result. Errors
-// that occur are not returned.
+// that occur are not returned but will be logged.
 func (fh *FileHandler) removeFiles(paths ...string) {
 	for _, path := range paths {
 		err := os.Remove(path)
