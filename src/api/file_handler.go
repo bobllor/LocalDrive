@@ -26,6 +26,7 @@ const (
 	FilePostUploadFileCompleteRoute = "POST /api/upload/{id}/complete"
 	FilePostDownloadFileRoute       = "GET /api/download/file/{fileId}"
 	FilePostAddFolderRoute          = "POST /api/folders/add"
+	FilePatchUpdateFileStatus       = "PATCH /api/upload/{id}/fail"
 )
 
 const CHUNKS_DIR_NAME = "lcschunks"
@@ -247,6 +248,12 @@ func (fh *FileHandler) UploadGenerateId(w http.ResponseWriter, r *http.Request) 
 //
 // This requires the auth middleware.
 func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
+	_, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
+	if !ok {
+		fh.util.HttpWriteUnauthorizedError(w, r)
+		return
+	}
+
 	uploadId := r.PathValue("id")
 	cinfo, ok := fh.uploadSessions[uploadId]
 	// typically this is either unauthorized or an invalid id is given
@@ -383,7 +390,7 @@ func (fh *FileHandler) UploadFileChunk(w http.ResponseWriter, r *http.Request) {
 //
 // This requires the auth middleware.
 func (fh *FileHandler) UploadFileComplete(w http.ResponseWriter, r *http.Request) {
-	userContext, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
+	_, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
 	if !ok {
 		fh.util.HttpWriteUnauthorizedError(w, r)
 		return
@@ -406,7 +413,7 @@ func (fh *FileHandler) UploadFileComplete(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	accountDir, err := fh.mkAccountDir(userContext.AccountId)
+	accountDir, err := fh.mkAccountDir(cinfo.AccountId)
 	if err != nil {
 		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
 
@@ -476,7 +483,7 @@ func (fh *FileHandler) UploadFileComplete(w http.ResponseWriter, r *http.Request
 
 	// status update is complete
 	cinfo.FileInfo.UploadStatus = file.UploadCompleted
-	upErr := fh.gateway.File.UpdateFile(userContext.AccountId, cinfo.FileInfo.FileID, file.ColumnUploadStatus, cinfo.FileInfo.UploadStatus)
+	upErr := fh.gateway.File.UpdateFile(cinfo.AccountId, cinfo.FileInfo.FileID, file.ColumnUploadStatus, cinfo.FileInfo.UploadStatus)
 	if upErr != nil {
 		// errors will not cancel, the file will still be shown on the front end thanks to the response.
 		// background workers will resolve the issue periodically.
@@ -491,6 +498,56 @@ func (fh *FileHandler) UploadFileComplete(w http.ResponseWriter, r *http.Request
 	delete(fh.uploadSessions, uploadId)
 	// TODO: this will probably need a lock, research it.
 	fh.removeFiles(chunkPathsToRemove...)
+}
+
+// UploadFileStatusFailed is used to mark an upload session's File entry as
+// failed in the database.
+// It writes a boolean ResponseApi if successful.
+//
+// This requires auth and is a PATCH request.
+func (fh *FileHandler) UploadFileStatusFailed(w http.ResponseWriter, r *http.Request) {
+	_, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
+	if !ok {
+		fh.util.HttpWriteUnauthorizedError(w, r)
+		return
+	}
+
+	sessionId := r.PathValue("id")
+	if sessionId == "" {
+		fh.util.HttpWriteCustomBadDataError(
+			w,
+			"No session ID found.",
+			ReasonBadRequestData,
+			"No session ID was given",
+		)
+		return
+	}
+
+	cinfo, ok := fh.uploadSessions[sessionId]
+	if !ok {
+		fh.util.HttpWriteCustomBadDataErrorf(
+			w,
+			"Invalid session ID given.",
+			ReasonBadRequestData,
+			"Invalid session ID %s",
+			sessionId,
+		)
+		return
+	}
+
+	err := fh.gateway.File.UpdateUploadStatus(cinfo.AccountId, cinfo.FileInfo.FileID, file.UploadFailed)
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "Failed to update file ID %s to failed: %v", cinfo.FileInfo.FileID, err)
+		return
+	}
+
+	n, err := WriteResponse(w, NewApiResponse(true))
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "Failed to write response: %v", err)
+		return
+	}
+
+	fh.util.Log.Debugf("Wrote %d bytes to response", n)
 }
 
 // PostAddFolder adds a folder to a user. It uses a response body containing
