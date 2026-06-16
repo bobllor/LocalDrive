@@ -20,6 +20,9 @@ type ServerConfig struct {
 	// inside EnvFiles. It is recommended to use EnvFiles instead.
 	Environment map[string]string `yaml:"environment"`
 
+	// StoragePath is the path to the storage for the files to be stored on.
+	StoragePath string `yaml:"storage_path"`
+
 	// ServerAddress is the TCP	address of the server. It is expected to be in the format of "host:port".
 	ServerAddress string `yaml:"server_address"`
 }

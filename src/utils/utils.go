@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
-	"time"
 )
 
 // ConvertToAny converts a slice to an []any. This is only used for
@@ -18,12 +17,6 @@ func ConvertToAny[S ~[]T, T comparable](v S) []any {
 	}
 
 	return conv
-}
-
-// FormatTime formats the given time to the format YYYY-MM-DD HH:MM:SS
-// as a string.
-func FormatTime(date time.Time) string {
-	return date.Format(time.DateTime)
 }
 
 // GetFiles retrieves all files in a given path.

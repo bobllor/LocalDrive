@@ -1,9 +1,22 @@
 import type { JSX } from "react";
-import type { File } from "../../../context/FileStore";
+import type { FileResponse } from "../../../context/FileStore";
 import { useNavigate } from "react-router";
 import React from "react";
-import { useFileListStore } from "./file-list-display-files/FileListStore";
+import { useFileListStore } from "./store/FileListStore";
 import { useShallow } from "zustand/shallow";
+import { createUrl } from "../../../server-utils";
+
+type TableHeadObj = {
+    text: string,
+}
+
+type FileListDisplayProps = {
+    files: Array<FileResponse>,
+}
+
+type FileObjProps = {
+    fileObj: FileResponse,
+}
 
 const THEAD_ELEMENTS: Array<TableHeadObj> = [
     {
@@ -12,12 +25,20 @@ const THEAD_ELEMENTS: Array<TableHeadObj> = [
     {
         text: "File size",
     },
+    {
+        text: "",
+    },
 ];
 
 const hoverCss = "hover:bg-gray-400/45";
 
 export default function FileListDisplay({files}: FileListDisplayProps): JSX.Element{
     const clearFileIds = useFileListStore(state => state.clearFileIds);
+
+    // files in progress will not be updated
+    const filesMap = files.filter(fileObj => {
+        return fileObj.uploadStatus === "completed";
+    });
 
     return (
         <table 
@@ -27,7 +48,7 @@ export default function FileListDisplay({files}: FileListDisplayProps): JSX.Elem
                     {THEAD_ELEMENTS.map((tObj, i) => 
                         <th 
                         onClick={clearFileIds}
-                        className={hoverCss}
+                        className="w-full"
                         key={i}>
                             <span>
                                 {tObj.text}
@@ -38,11 +59,11 @@ export default function FileListDisplay({files}: FileListDisplayProps): JSX.Elem
             </thead>
             <tbody>
                 {
-                    files.map((fileObj, i) => 
-                        <React.Fragment key={i}>
+                    filesMap.map(fileObj => (
+                        <React.Fragment key={fileObj.fileID}>
                             <FileTableRow fileObj={fileObj} />
                         </React.Fragment>
-                    )
+                    ))
                 }
             </tbody>
         </table>
@@ -70,7 +91,7 @@ function FileTableRow({fileObj}: FileObjProps): JSX.Element{
         }}
         onDoubleClick={() => {
             if(fileObj.fileType == "dir"){
-                navigate(`folder/${fileObj.fileID}`); 
+                navigate(`/storage/folder/${fileObj.fileID}`); 
             }
         }}
         className={`select-none ${selectedFileIds.has(fileObj.fileID) ? "bg-blue-400/60 hover:bg-blue-400/80" : hoverCss}`}>
@@ -93,18 +114,29 @@ function FileTableData({fileObj}: FileObjProps): JSX.Element{
             <td className={cssClass}>
                 {fileObj.fileType != "dir" ? fileObj.fileSize : "-"}
             </td>
+            <td className={cssClass}>
+                {
+                    fileObj.fileType != "dir" &&
+                    <span
+                    className="hover:bg-gray-500 rounded-2xl px-1.5 flex justify-center items-center"
+                    onClick={() => downloadFile(fileObj.fileID)}>
+                        D
+                    </span>
+                }
+            </td>
         </>
     )
 }
 
-type TableHeadObj = {
-    text: string,
-}
+function downloadFile(fileId: string): void{
+    let a = window.document.createElement("a");
+    const fileUrl = createUrl(`/api/download/file/${fileId}`);
 
-type FileListDisplayProps = {
-    files: Array<File>,
-}
+    a.href = fileUrl;
+    a.style.display = "none";
 
-type FileObjProps = {
-    fileObj: File,
+    document.body.appendChild(a);
+
+    a.click();
+    document.body.removeChild(a);
 }

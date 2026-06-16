@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/bobllor/cloud-project/src/file"
@@ -17,7 +18,9 @@ var (
 	// Any errors related to SQL, such as building or querying.
 	SqlErr = errors.New("an error occurred on the database server")
 	// ServerErr that represents an error on the server.
-	ServerErr = errors.New("an error occured on the server")
+	ServerErr     = errors.New("an error occured on the server")
+	UniqueFileErr = errors.New("file already exists, file must be unique")
+	NoFileArgsErr = errors.New("no files given")
 )
 
 // NewFileGateway creates a new FileGateway for database related options.
@@ -37,7 +40,7 @@ type FileGateway struct {
 	deps           *utils.Deps
 }
 
-// GetAllFiles returns a File slice of all File rows belonging to the file owner.
+// GetAllFiles returns a FileResponse slice of all File rows belonging to the file owner.
 //
 // If an error occurs then it will return an error, and abort
 // the scanning process if it is occurring.
@@ -45,9 +48,10 @@ func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, erro
 	query, args, err := sqlquery.Select(
 		file.TableName,
 		file.ColumnFileName, file.ColumnFileType,
-		file.ColumnFileID, file.ColumnParentID,
-		file.ColumnFileSize, file.ColumnModifiedOn,
-		file.ColumnDeletedOn,
+		file.ColumnFileID, file.ColumnFileExtension,
+		file.ColumnParentID, file.ColumnFileSize,
+		file.ColumnModifiedOn, file.ColumnDeletedOn,
+		file.ColumnUploadStatus,
 	).Where().Equal(file.ColumnFileOwnerID, fileOwnerID).Build()
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to build query: %v | Query: %s | Args: %d", err, query, len(args))
@@ -70,16 +74,13 @@ func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, erro
 	return files, nil
 }
 
-// GetFile retrieves a single file based on the given file ID.
+// GetFile retrieves a single file based on the given file ID. It will return the
+// full File metadata.
 //
 // If the file does not exist, it will return nil. This must be handled.
-func (f *FileGateway) GetFile(fileOwnerId string, fileId string) (*file.FileResponse, error) {
+func (f *FileGateway) GetFile(fileOwnerId string, fileId string) (*file.File, error) {
 	q, args, err := sqlquery.Select(
 		file.TableName,
-		file.ColumnFileName, file.ColumnFileType,
-		file.ColumnFileID, file.ColumnParentID,
-		file.ColumnFileSize, file.ColumnModifiedOn,
-		file.ColumnDeletedOn,
 	).Where().Equal(file.ColumnFileOwnerID, fileOwnerId).And().Equal(file.ColumnFileID, fileId).Build()
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to build query to update: %v | Query: %s | Args: %d", err, q, len(args))
@@ -92,8 +93,7 @@ func (f *FileGateway) GetFile(fileOwnerId string, fileId string) (*file.FileResp
 		return nil, SqlErr
 	}
 
-	var fr []file.FileResponse
-	err = SelectRows(rows, &fr)
+	fr, err := f.getFiles(rows)
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to retrieve data from query: %v | Query: %s", err, q)
 		return nil, SqlErr
@@ -109,7 +109,7 @@ func (f *FileGateway) GetFile(fileOwnerId string, fileId string) (*file.FileResp
 //
 // Upon update, the modified time will also be updated to the time it was called.
 func (f *FileGateway) UpdateFile(fileOwnerID string, fileId, column string, arg any) error {
-	now := time.Now().UTC()
+	now := utils.NowUTC()
 	query, args, err := sqlquery.Update(file.TableName, file.ColumnModifiedOn, column).Args(now, arg).
 		Where().Equal(file.ColumnFileOwnerID, fileOwnerID).
 		And().Equal(file.ColumnFileID, fileId).Build()
@@ -124,18 +124,28 @@ func (f *FileGateway) UpdateFile(fileOwnerID string, fileId, column string, arg 
 		return SqlErr
 	}
 
+	f.deps.Log.Infof("Updated file %s", fileId)
 	logResultRows(f.deps.Log, res)
 
 	return nil
 }
 
 // AddFile adds slice of File structs to the File database.
-// If an error occurs it will return an error.
 //
-// This does not write the files to the disk.
-func (f *FileGateway) AddFile(files []file.File) error {
+// A special duplicate error can be returned.
+// A duplicate error can occur if the following are true for a File:
+//   - File.Type is "file"
+//   - An existing entry with the same File.Name, File.Extension, and File.ParentID
+//
+// A special files length of 0 error can also be returned.
+//
+// Otherwise generic errors are returned for client usage. If one file fails then all
+// given files will fail.
+//
+// This does not write the files to the disk, it is strictly used for metadata purposes.
+func (f *FileGateway) AddFile(files ...file.File) error {
 	if len(files) == 0 {
-		return fmt.Errorf("no arguments given for AddFile")
+		return NoFileArgsErr
 	}
 
 	query, args, err := sqlquery.InsertInto(
@@ -144,45 +154,69 @@ func (f *FileGateway) AddFile(files []file.File) error {
 		file.ColumnFileName,
 		file.ColumnFileType,
 		file.ColumnFileID,
+		file.ColumnFileExtension,
 		file.ColumnParentID,
 		file.ColumnFilePath,
 		file.ColumnFileSize,
 		file.ColumnModifiedOn,
 		file.ColumnDeletedOn,
+		file.ColumnUploadStatus,
+		file.ColumnUniqueHash,
 	).Args(file.FlattenFile(files...)...).Build()
 	if err != nil {
-		f.deps.Log.Criticalf("Failed to build query: %v", err)
+		f.deps.Log.Criticalf("Failed to build ADD FILE INSERT INTO query: %v", err)
 		return SqlErr
 	}
 
+	// duplicate errors can occur here, the original err has to be returned and handled
 	res, err := execQuery(f.database, query, args...)
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to insert into %s: %v | Query: %s", file.TableName, err, query)
-		return SqlErr
+		return err
 	}
 
+	fileIds := []string{}
+	for _, f := range files {
+		fileIds = append(fileIds, f.FileID)
+	}
+	f.deps.Log.Infof("Successfully added %d files", len(files))
+	f.deps.Log.Debugf("Added file IDs: %s", strings.Join(fileIds, ","))
 	logResultRows(f.deps.Log, res)
 
 	return nil
 }
 
-// RenameFile renames a file to a new file name. This requires the fileId
-// in order to rename.
+// RenameFile renames a file to a new file name.
 //
-// This will also update the modified date time.
+// The unique hash will be regenerated due to the name change. A duplication error can
+// occur if the file is the 'file' type and it exists with the same parent ID.
+// This will also update the modified date time to current time.
 func (f *FileGateway) RenameFile(accountId, fileId, newFileName string) error {
-	q, args, err := sqlquery.Update(file.TableName, file.ColumnFileName, file.ColumnModifiedOn).
-		Args(newFileName, time.Now().UTC()).Where().Equal(file.ColumnFileID, fileId).
-		And().Equal(file.ColumnFileOwnerID, accountId).Build()
-	if err != nil {
-		return logSqlBuildError(f.deps.Log, err, q, args)
-	}
+	q := fmt.Sprintf(`
+		UPDATE %s
+		SET %s = ?,
+			%s = SHA2(CONCAT(%s, '%s', %s, %s), 256),
+			%s = ?
+		WHERE %s = ? AND %s = ?`,
+		file.TableName,
+		file.ColumnFileName,
+		file.ColumnUniqueHash, file.ColumnFileOwnerID, newFileName, file.ColumnFileExtension, file.ColumnParentID,
+		file.ColumnModifiedOn,
+		file.ColumnFileOwnerID,
+		file.ColumnFileID,
+	)
+	args := []any{newFileName, utils.NowUTC(), accountId, fileId}
 
 	res, err := execQuery(f.database, q, args...)
+	if IsDuplicateSqlError(err) {
+		f.deps.Log.Warnf("Duplicate file rename for %s (-> %s)", fileId, newFileName)
+		return err
+	}
 	if err != nil {
 		return logQueryError(f.deps.Log, err, q)
 	}
 
+	f.deps.Log.Infof("Renamed file to %s (id=%s)", newFileName, fileId)
 	logResultRows(f.deps.Log, res)
 
 	return nil
@@ -274,20 +308,14 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 		}
 	}
 
-	args := []any{accountId}
-	parentCondition := "= ?"
-	if parentFolderID == "" {
-		parentCondition = "IS NULL"
-	} else {
-		args = append(args, parentFolderID)
-	}
+	args := []any{accountId, parentFolderID}
 
 	query := fmt.Sprintf(`
 		SELECT f.*
 		FROM %s f 
 		JOIN %s 
 			ON u.%s = f.%s 
-		WHERE u.%s = ? AND f.%s %s
+		WHERE u.%s = ? AND f.%s = ?
 		`,
 		file.TableName,
 		fmt.Sprintf("%s u", user.TableName),
@@ -295,20 +323,41 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 		file.ColumnFileOwnerID,
 		user.ColumnAccountID,
 		file.ColumnParentID,
-		parentCondition,
 	)
 
 	rows, err := f.database.Query(query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query database: %v | query: %s", err, query)
+		return nil, logQueryError(f.deps.Log, err, query)
 	}
 
 	files, err := f.getFiles(rows)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse File query: %v", err)
+		f.deps.Log.Criticalf("Failed to retrieve (SELECT) files: %v", err)
+		return nil, SqlErr
 	}
 
 	return files, nil
+}
+
+// UpdateUploadStatus updates the upload status to a given status.
+//
+// This does not update the modified on time.
+func (f *FileGateway) UpdateUploadStatus(accountId, fileId string, status file.UploadStatus) error {
+	q, args, err := sqlquery.Update(file.TableName, file.ColumnUploadStatus).Args(status).
+		Where().Equal(file.ColumnFileOwnerID, accountId).And().Equal(file.ColumnFileID, fileId).Build()
+	if err != nil {
+		return logSqlBuildError(f.deps.Log, err, q, args)
+	}
+
+	res, err := execQuery(f.database, q, args...)
+	if err != nil {
+		return logQueryError(f.deps.Log, err, q)
+	}
+
+	f.deps.Log.Infof("Updated file (%s) upload status to '%s'", fileId, status)
+	logResultRows(f.deps.Log, res)
+
+	return nil
 }
 
 // validateFileExists checks if the folder ID has the correct formatting and
@@ -371,11 +420,14 @@ func (f *FileGateway) getFiles(rows *sql.Rows) ([]file.File, error) {
 			&f.Name,
 			&f.Type,
 			&f.FileID,
+			&f.Extension,
 			&f.ParentID,
 			&f.Path,
 			&f.Size,
 			&f.ModifiedOn,
 			&f.DeletedOn,
+			&f.UploadStatus,
+			&f.UniqueHash,
 		)
 
 		if scanErr != nil {

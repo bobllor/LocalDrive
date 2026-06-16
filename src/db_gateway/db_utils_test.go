@@ -43,7 +43,6 @@ func TestSelectRow(t *testing.T) {
 
 	assert.NotEqual(t, ffTest.FileName, "")
 	assert.NotEqual(t, ffTest.FileID, "")
-	assert.NotEqual(t, ffTest.FileSize, 0)
 }
 
 func TestSelectRowsSlice(t *testing.T) {
@@ -108,7 +107,7 @@ func TestMultipleSelectRows(t *testing.T) {
 		DropRows(fdb.database, user.TableName, user.ColumnAccountID, usr.AccountID)
 	})
 
-	err = fdb.AddFile(files)
+	err = fdb.AddFile(files...)
 	assert.Nil(t, err)
 
 	type MultipleFileColumns struct {

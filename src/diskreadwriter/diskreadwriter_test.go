@@ -20,7 +20,7 @@ func TestUndersizedChunkWrite(t *testing.T) {
 
 	file := filepath.Join(dir, "test1.txt")
 
-	dw := newTestDiskWriter(size)
+	dw := newTestDiskReadWriter(size)
 	b := getTestByte(size)
 
 	info, err := dw.WriteToDisk(file, b)
@@ -36,7 +36,7 @@ func TestOversizeChunkWrite(t *testing.T) {
 	file := filepath.Join(dir, "test1.txt")
 
 	byteSize := 10240
-	dw := newTestDiskWriter(chunkSize)
+	dw := newTestDiskReadWriter(chunkSize)
 	b := getTestByte(byteSize)
 
 	info, err := dw.WriteToDisk(file, b)
@@ -51,7 +51,7 @@ func TestVeryUndersizedChunkWrite(t *testing.T) {
 
 	byteSize := 30
 
-	dw := newTestDiskWriter(chunkSize)
+	dw := newTestDiskReadWriter(chunkSize)
 	b := getTestByte(byteSize)
 
 	info, err := dw.WriteToDisk(dir+"/"+"test.txt1", b)
@@ -64,7 +64,7 @@ func TestFailWriteDirectoryPath(t *testing.T) {
 	dir := t.TempDir()
 	chunkSize := 512
 
-	dw := newTestDiskWriter(chunkSize)
+	dw := newTestDiskReadWriter(chunkSize)
 	b := getTestByte(2048)
 
 	_, err := dw.WriteToDisk(dir, b)
@@ -75,19 +75,19 @@ func TestFailWriteNoData(t *testing.T) {
 	dir := t.TempDir()
 	chunkSize := 512
 
-	dw := newTestDiskWriter(chunkSize)
+	dw := newTestDiskReadWriter(chunkSize)
 
 	_, err := dw.WriteToDisk(dir, []byte{})
 	assert.NotNil(t, err)
 }
 
-// newTestDiskWriter creates a new DiskWriter with a testing setup.
-func newTestDiskWriter(chunkSize int) *DiskWriter {
+// newTestDiskReadWriter creates a new DiskWriter with a testing setup.
+func newTestDiskReadWriter(chunkSize int) *DiskReadWriter {
 	logger := gologger.NewLogger(log.New(os.Stdout, "", log.Ldate|log.Ltime), gologger.Lsilent)
 
 	deps := utils.NewDeps(logger)
 
-	dw := NewDiskWriter(chunkSize, deps)
+	dw := NewDiskReadWriter(chunkSize, deps)
 
 	return dw
 }

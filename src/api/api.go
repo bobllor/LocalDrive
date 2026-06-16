@@ -6,12 +6,19 @@ import (
 	"time"
 
 	dbcon "github.com/bobllor/cloud-project/src/db_gateway"
+	"github.com/bobllor/cloud-project/src/utils"
 	"github.com/bobllor/gologger"
 	"github.com/google/uuid"
 )
 
 const (
-	ContentJson = "application/json"
+	ContentJson  = "application/json"
+	ContentOctet = "application/octet-stream"
+)
+
+const (
+	ContentTypeKey        = "Content-Type"
+	ContentDispositionKey = "Content-Disposition"
 )
 
 type ContextKey string
@@ -81,13 +88,13 @@ func (ah *ApiHandler) CreateAuthMiddleware(f func(http.ResponseWriter, *http.Req
 		}
 
 		if !validSession {
-			ah.log.Infof("Invalid session ID, unauthroized access from %v", r.RemoteAddr)
+			ah.log.Infof("Invalid session ID, unauthorized access from %v", r.RemoteAddr)
 			WriteErrorResponse(w, ErrorUnauthorizedMsg, http.StatusUnauthorized, ReasonUnauthorized)
 
 			return
 		}
 
-		r = r.WithContext(context.WithValue(r.Context(), CONTEXT_USER_SESSION_KEY, ses))
+		r = ah.writeContext(r, CONTEXT_USER_SESSION_KEY, ses)
 
 		// refreshes the cookie
 		SetCookieSession(w, sessionCookie.Value)
@@ -111,20 +118,27 @@ func (ah *ApiHandler) middlewareHandler(f func(http.ResponseWriter, *http.Reques
 		startTime := time.Now()
 		requestID := uuid.New().String()
 
-		ah.log.Infof("Starting new request | id=%s,method=%s", requestID, r.Method)
+		ah.log.Infof("Starting new request | date=%s,id=%s,method=%s", utils.FormatTime(startTime), requestID, r.Method)
 		ah.log.Infof("%s: accessed on agent %s", r.RemoteAddr, r.UserAgent())
 
-		r = r.WithContext(context.WithValue(r.Context(), CONTEXT_REQUEST_ID_KEY, requestID))
+		r = ah.writeContext(r, CONTEXT_REQUEST_ID_KEY, requestID)
 
-		WriteHeaders(w, r)
+		// headers are written in the server mux
 
 		next.ServeHTTP(w, r)
 
 		finalTime := time.Since(startTime)
 		ah.log.Infof(
-			"Completed request | id=%s,time=%v seconds",
+			"Completed request | date=%s,id=%s,time=%v seconds",
+			utils.FormatTime(startTime),
 			requestID,
 			finalTime.Seconds(),
 		)
 	})
+}
+
+// writeContext writes the key and its value to r.Context. It will return back
+// a copy of the request with the context.
+func (ah *ApiHandler) writeContext(r *http.Request, key any, value any) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), key, value))
 }

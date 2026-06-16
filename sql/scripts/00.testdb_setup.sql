@@ -12,19 +12,38 @@ CREATE TABLE IF NOT EXISTS UserAccount(
 
 CREATE TABLE IF NOT EXISTS File(
     AccountID varchar(255) NOT NULL,
-    FileName varchar(255),
-    FileType varchar(9),
-    FileID varchar(50),
-    ParentID varchar(255),
-    FilePath varchar(5120),
-    FileSize int,
-    ModifiedOn DATETIME,
+    FileName varchar(255) NOT NULL,
+    FileType varchar(9) NOT NULL,
+    FileID varchar(50) NOT NULL,
+    Extension varchar(25) NOT NULL,
+    ParentID varchar(255) NOT NULL,
+    FilePath varchar(5120) NOT NULL,
+    FileSize int NOT NULL,
+    ModifiedOn DATETIME NOT NULL,
     DeletedOn DATETIME,
+    UploadStatus varchar(10) DEFAULT 'pending' NOT NULL,
+    UniqueHash varchar(64) NOT NULL,
     PRIMARY KEY (FileID),
     CONSTRAINT FK_File_UserAccount
         FOREIGN KEY (AccountID) 
         REFERENCES UserAccount(AccountID)
         ON DELETE CASCADE
+);
+
+-- prevents duplicate entries for normal files who share
+-- the same parent ID on the same account
+-- folders can have duplicate entries
+-- the unique hash is a sha256 of: account id + file name + file extension + parent id
+-- a clean up worker will be made to handle failed or pending rows, in addition to their stored
+-- chunks or file.
+CREATE UNIQUE INDEX FileUniqueIndex ON File(
+    (
+        CASE 
+            WHEN FileType = 'file'
+                AND UploadStatus IN ('completed', 'pending')
+            THEN UniqueHash 
+        END
+    )
 );
 
 CREATE TABLE IF NOT EXISTS Session(
@@ -39,7 +58,8 @@ CREATE TABLE IF NOT EXISTS Session(
         ON DELETE CASCADE
 );
 
-/* default entries for the test database */
+-- default entries for the test database, do not include below in prod
+-- the path is not the full path and will be appended to the root folder
 INSERT INTO UserAccount
     VALUES
     (
@@ -53,36 +73,45 @@ INSERT INTO File
     VALUES
     (
         "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70",
-        "test1.txt",
+        "test1",
         "file",
         "randomfileidhere",
-        NULL,
-        "/path/to/file",
-        1234,
+        "txt",
+        "",
+        "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70/randomfileidhere",
+        0,
         NOW(),
-        NULL
+        NULL,
+        "completed",
+        "f3bf6020372579f86aadbb42a6416de73463cef330a84c6a1cf493eea411a2dd"
     ),
     (
         "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70",
         "folder1",
         "dir",
         "randomfolderidhere",
-        NULL,
-        "path/to/file",
-        101,
+        "",
+        "",
+        "",
+        0,
         NOW(),
-        NULL
+        NULL,
+        "completed",
+        ""
     ),
     (
         "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70",
-        "test2.txt",
+        "test2",
         "file",
         "anotherfileidhere",
+        "txt",
         "randomfolderidhere",
-        "/path/to/file",
-        1234,
+        "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70/anotherfileidhere",
+        0,
         NOW(),
-        NULL
+        NULL,
+        "completed",
+        "3b3cfd0153176b8c917c784adbcb6026b004f3514af0711b4c19f50829969f9d"
     );
 INSERT INTO Session
     VALUES

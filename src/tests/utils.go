@@ -1,68 +1,20 @@
 package tests
 
 import (
-	"io"
 	"log"
 	"math/rand"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/bobllor/gologger"
 )
 
-type TestDbMeta struct {
-	User     string
-	Addr     string
-	Password string
-	Net      string
-	DbName   string
-}
-
-// DbMetaInfo is a read-only struct used to hold information
-// of the test database.
-var DbMetaInfo = TestDbMeta{
-	User:     "root",
-	Addr:     ":3307",
-	Password: "",
-	Net:      "tcp",
-	DbName:   "TestLocalCloudStorage",
-}
-
-type TestDbRow struct {
-	AccountID  string
-	Username   string
-	UserActive bool
-	PhcString  string
-	SessionID  string
-	FileID     string
-	FileName   string
-}
-
-// DbRowInfo is a read-only variable that contains the default values
-// included in the test database.
-var DbRowInfo = TestDbRow{
-	AccountID:  "89672a64-f3ff-490c-8f2d-7e5cf5d4aa70",
-	Username:   "test.username",
-	UserActive: true,
-	PhcString:  "$argon2id$v=19$m=65536,t=2,p=4$QTdpUkJ3c3J0amlOT2huV2VBR2duZw$vzICl8p5CVfpGfypDV4yIVULsYatAmir6B8nHWtcPtE",
-	SessionID:  "7ca90f85-b1e0-4214-8ff6-4e3720cc8078",
-	FileID:     "randomfileidhere",
-	FileName:   "test1.txt",
-}
-
-// TestPassword is the test password used to create the PhcString for
-// the default entry in the test database.
-var TestPassword = "anothertestpassword"
-
-// TestSalt is the salt used to salt the test password for the
-// default entry in the test database.
-var TestSalt = []byte("A7iRBwsrtjiNOhnWeAGgng")
-
 // NewTestLogger creates a new test logger with a silent output.
 func NewTestLogger() *gologger.Logger {
-	printer := log.New(io.Discard, "", log.Ldate|log.Ltime)
+	printer := log.New(os.Stdout, "", log.Ldate|log.Ltime)
 	log := gologger.NewLogger(printer, gologger.Lsilent)
 
 	return log
@@ -115,4 +67,20 @@ func CreateFiles(root string) ([]string, error) {
 	}
 
 	return paths, nil
+}
+
+// GetBytes creates a byte slice of arbitrary random data.
+func GetBytes(size int) []byte {
+	b := make([]byte, 0, size)
+	r := rand.New(rand.NewSource(time.Now().Unix()))
+
+	chars := "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	chars += strings.ToLower(chars)
+
+	for range size {
+		ranCh := r.Intn(len(chars) - 1)
+		b = append(b, chars[ranCh])
+	}
+
+	return b
 }

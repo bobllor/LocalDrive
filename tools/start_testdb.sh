@@ -25,7 +25,17 @@ if [[ "$container_status" == "false" ]]; then
         --mount type=volume,src=$c_name,dst=/var/lib/mysql \
         --mount type=bind,src=/etc/timezone,dst=/etc/timezone,readonly \
         --mount type=bind,src=/etc/localtime,dst=/etc/localtime,readonly \
-        mysql:lts-oracle 2>&1
+        mysql:lts-oracle 2>&1 ||
+    # NOTE: this may fail some tests due to the removal of the timezone,
+    # but theoretically it should still work
+    docker run --detach \
+        --name "$c_name" \
+        -p "$host_port:$c_port" \
+        --env MYSQL_ALLOW_EMPTY_PASSWORD=yes \
+        --mount type=volume,src=$c_name,dst=/var/lib/mysql \
+        --mount type=bind,src=/etc/localtime,dst=/etc/localtime,readonly \
+        mysql:lts-oracle 2>&1 ||
+    
 
     init_status=false
     echo "Waiting for server connection..."
@@ -48,6 +58,36 @@ if [[ "$container_status" == "false" ]]; then
     fi
 
     echo "Container $c_name started"
+
+    test_app_folder="./testapp"
+    
+    if [[ ! -e "$test_app_folder" ]]; then
+        echo "Creating testapp folder"
+        mkdir "$test_app_folder"
+    fi
+
+    # obtained from the testdb_setup.sql file
+    account_id="89672a64-f3ff-490c-8f2d-7e5cf5d4aa70" 
+    folder="$test_app_folder/$account_id"
+    # test1.txt | test2.txt
+    files=("randomfileidhere" "anotherfileidhere")
+
+    if [[ ! -e "$folder" ]]; then
+        echo "Creating test account folder"
+        mkdir $folder
+    else
+        echo "Skipping creation of $folder: already exists"
+    fi
+
+    echo "Creating files for test account"
+    for file in "${files[@]}"; do
+        if [[ ! -e "$folder/$file" ]]; then
+            touch "$folder/$file"
+            echo "Created $folder/$file"
+        else
+            echo "Skipping creation of $file: already exists"
+        fi
+    done
 else
     echo "error: Container $c_name is already running"
 fi

@@ -1,6 +1,7 @@
 package dbgateway
 
 import (
+	"database/sql"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 
 func TestGetSessionByAccountID(t *testing.T) {
 	sg := newTestSessionGateway(t)
+	resetSessionId(sg.database)
 
 	s, err := sg.GetSessionByAccountID(tests.DbRowInfo.AccountID)
 	assert.Nil(t, err)
@@ -82,6 +84,7 @@ func TestUpsertSessionReplace(t *testing.T) {
 
 func TestGetSessionBySessionID(t *testing.T) {
 	sg := newTestSessionGateway(t)
+	resetSessionId(sg.database)
 
 	ses, err := sg.GetSessionBySessionID(tests.DbRowInfo.SessionID)
 	assert.Nil(t, err)
@@ -103,6 +106,8 @@ func TestValidateSession(t *testing.T) {
 	sg := newTestSessionGateway(t)
 
 	t.Run("Valid ID", func(t *testing.T) {
+		resetSessionId(sg.database)
+
 		status, ses, err := sg.ValidateSessionAndGetUser(tests.DbRowInfo.SessionID)
 		assert.Nil(t, err)
 		assert.NotNil(t, ses)
@@ -186,4 +191,17 @@ func newTestSessionGateway(t *testing.T) *SessionGateway {
 	sg := NewSessionGateway(db, deps)
 
 	return sg
+}
+
+// resetSessionId resets the stored session ID of the default user
+// in the test DB.
+//
+// This is used only if a test is failing due to a test case modifying
+// the data before a test case trying to retrieve the default ID.
+func resetSessionId(db *sql.DB) {
+	UpdateRow(
+		db, session.TableName,
+		session.ColumnAccountID, tests.DbRowInfo.AccountID,
+		[]string{session.ColumnSessionID}, tests.DbRowInfo.SessionID,
+	)
 }

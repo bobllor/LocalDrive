@@ -22,14 +22,16 @@ export type User = {
  * Authentication failures will redirect to the login page.
  */
 export const authMiddleware: MiddlewareFunction = async ({context}) => {
-    const user = await getUser();
+    try{
+        const user = await getUser();
+        if(!user){
+            throw redirect("/login");
+        }
 
-    if(!user){
-        throw redirect("/login");
+        context.set(userContext, user);
+    }catch(err){
+        throw err;
     }
-
-    // TODO: log res not in console.log
-    context.set(userContext, user);
 }
 
 /**

@@ -2,19 +2,28 @@ package api
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
+	"fmt"
+	"io"
+	"math"
+	"mime"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/bobllor/assert"
+	dbgateway "github.com/bobllor/cloud-project/src/db_gateway"
 	"github.com/bobllor/cloud-project/src/file"
 	"github.com/bobllor/cloud-project/src/tests"
 )
 
 func TestGetFilesByAccountAndParent(t *testing.T) {
 	mux := http.NewServeMux()
-	gw, _ := getGatewayDb(t)
+	gw, _ := dbgateway.NewTestGatewayDB(t)
 	ap := NewApiHandler(gw, tests.NewTestLogger())
 
 	fh := NewFileHandler(gw, tests.NewTestLogger())
@@ -42,12 +51,12 @@ func TestGetFilesByAccountAndParent(t *testing.T) {
 		assert.NotEqual(t, res.StatusCode, 404)
 		defer res.Body.Close()
 
-		var apiRes ApiResponse
+		var apiRes ApiResponse[[]file.FileResponse]
 		err = json.NewDecoder(res.Body).Decode(&apiRes)
 		assert.Nil(t, err)
 		assert.NotEqual(t, apiRes.Status, StatusError)
 
-		var output []file.File
+		var output []file.FileResponse
 		d, err := json.Marshal(apiRes.Output)
 		assert.Nil(t, err)
 
@@ -55,7 +64,7 @@ func TestGetFilesByAccountAndParent(t *testing.T) {
 		assert.Nil(t, err)
 
 		assert.Equal(t, len(output), 2)
-		assert.Equal(t, output[0].OwnerID, tests.DbRowInfo.AccountID)
+		assert.Equal(t, output[0].FileID, tests.DbRowInfo.FileID)
 	})
 
 	t.Run("Child files from folder", func(t *testing.T) {
@@ -71,12 +80,12 @@ func TestGetFilesByAccountAndParent(t *testing.T) {
 		assert.NotEqual(t, res.StatusCode, 404)
 		defer res.Body.Close()
 
-		var apiRes ApiResponse
+		var apiRes ApiResponse[[]file.FileResponse]
 		err = json.NewDecoder(res.Body).Decode(&apiRes)
 		assert.Nil(t, err)
 		assert.NotEqual(t, apiRes.Status, StatusError)
 
-		var output []file.File
+		var output []file.FileResponse
 		d, err := json.Marshal(apiRes.Output)
 		assert.Nil(t, err)
 
@@ -84,7 +93,8 @@ func TestGetFilesByAccountAndParent(t *testing.T) {
 		assert.Nil(t, err)
 
 		assert.Equal(t, len(output), 1)
-		assert.Equal(t, output[0].OwnerID, tests.DbRowInfo.AccountID)
+		// this is the child file, which has a different ID
+		assert.Equal(t, output[0].FileID, "anotherfileidhere")
 	})
 
 	t.Run("Invalid folder", func(t *testing.T) {
@@ -99,11 +109,568 @@ func TestGetFilesByAccountAndParent(t *testing.T) {
 		assert.True(t, res.StatusCode == http.StatusBadRequest)
 		defer res.Body.Close()
 
-		var apiRes ApiResponse
+		var apiRes ApiResponse[[]file.FileResponse]
 		err = json.NewDecoder(res.Body).Decode(&apiRes)
 		assert.Nil(t, err)
 		assert.Equal(t, apiRes.Status, StatusError)
 
 		assert.Contains(t, apiRes.Error.Message, "Invalid")
 	})
+}
+
+func TestDownloadFile(t *testing.T) {
+	mux := http.NewServeMux()
+	gw, _ := dbgateway.NewTestGatewayDB(t, dbgateway.GatewayDBOptions{CreateStorage: true})
+	ap := NewApiHandler(gw, tests.NewTestLogger())
+
+	mux.Handle(FilePostDownloadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.DownloadFile))
+
+	serv := httptest.NewServer(mux)
+	defer serv.Close()
+
+	url := serv.URL
+	client := serv.Client()
+	apiUrlNoFile := url + "/api/download/file/"
+
+	t.Run("Normal process", func(t *testing.T) {
+		req, err := tests.NewRequest("GET", apiUrlNoFile+tests.DbRowInfo.FileID, nil)
+		assert.Nil(t, err)
+
+		req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+		res, err := client.Do(req)
+		assert.Nil(t, err)
+		defer res.Body.Close()
+
+		_, params, err := mime.ParseMediaType(res.Header.Get(ContentDispositionKey))
+		assert.Nil(t, err)
+		fileName, ok := params["filename"]
+		assert.True(t, ok)
+		filePath := filepath.Join(t.TempDir(), fileName)
+		f, err := os.Create(filePath)
+		assert.Nil(t, err)
+		defer f.Close()
+
+		_, err = io.Copy(f, res.Body)
+		assert.Nil(t, err)
+
+		fs, err := os.Stat(filePath)
+		assert.Nil(t, err)
+
+		assert.Equal(t, fs.Name(), fileName)
+	})
+
+	t.Run("Invalid file ID", func(t *testing.T) {
+		req, err := tests.NewRequest("GET", apiUrlNoFile+"fdsa1234dzlk2039sclkorsv", nil)
+		assert.Nil(t, err)
+
+		req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+		res, err := client.Do(req)
+		assert.Nil(t, err)
+		defer res.Body.Close()
+
+		var apiRes ApiResponse[any]
+		err = json.NewDecoder(res.Body).Decode(&apiRes)
+		assert.Nil(t, err)
+
+		assert.NotNil(t, apiRes.Error)
+		assert.Equal(t, apiRes.Error.Reason, ReasonFileDoesNotExist)
+	})
+
+	t.Run("Directory file ID", func(t *testing.T) {
+		// from test sql script
+		req, err := tests.NewRequest("GET", apiUrlNoFile+"randomfolderidhere", nil)
+		assert.Nil(t, err)
+
+		req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+		res, err := client.Do(req)
+		assert.Nil(t, err)
+		defer res.Body.Close()
+
+		var apiRes ApiResponse[any]
+		err = json.NewDecoder(res.Body).Decode(&apiRes)
+		assert.Nil(t, err)
+
+		assert.NotNil(t, apiRes.Error)
+		assert.Equal(t, apiRes.Error.Code, http.StatusBadRequest)
+	})
+}
+
+func TestUploadGenerateId(t *testing.T) {
+	gw, db := dbgateway.NewTestGatewayDB(t, dbgateway.GatewayDBOptions{CreateTemp: true})
+	ap := NewApiHandler(gw, tests.NewTestLogger())
+
+	mux := http.NewServeMux()
+	mux.Handle(FilePostUploadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadGenerateId))
+
+	serv := httptest.NewServer(mux)
+	defer serv.Close()
+
+	url := serv.URL + "/api/upload"
+	tc := serv.Client()
+
+	t.Run("Normal", func(t *testing.T) {
+		fileName := "a video file.mp4"
+		t.Cleanup(func() {
+			deleteTestFile(t, ap, db, fileName)
+		})
+
+		body, err := tests.NewRequestBody(RequestFileUploadInfo{
+			FileName:      fileName,
+			FileSize:      12345555,
+			FileParentId:  "",
+			FileExtension: ".mp4",
+			TotalChunks:   15,
+		})
+		assert.Nil(t, err)
+
+		req, err := tests.NewRequest("POST", url, body)
+		assert.Nil(t, err)
+
+		req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+		res, err := tc.Do(req)
+		assert.Nil(t, err)
+		defer res.Body.Close()
+
+		var apres ApiResponse[string]
+		err = json.NewDecoder(res.Body).Decode(&apres)
+		assert.Nil(t, err)
+		assert.Nil(t, apres.Error)
+
+		_, ok := ap.FileHandler.uploadSessions[apres.Output]
+		assert.True(t, ok)
+	})
+
+	t.Run("Invalid body", func(t *testing.T) {
+		body, err := tests.NewRequestBody(ApiResponse[any]{})
+		assert.Nil(t, err)
+
+		req, err := tests.NewRequest("POST", url, body)
+		assert.Nil(t, err)
+
+		req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+		res, err := tc.Do(req)
+		assert.Nil(t, err)
+		assert.True(t, res.StatusCode >= 400)
+	})
+}
+
+func TestUploadFileChunk(t *testing.T) {
+	gw, db := dbgateway.NewTestGatewayDB(t, dbgateway.GatewayDBOptions{CreateTemp: true})
+	ap := NewApiHandler(gw, tests.NewTestLogger())
+
+	mux := http.NewServeMux()
+	mux.Handle(FilePostUploadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadGenerateId))
+	mux.Handle(FilePostUploadFileChunkRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileChunk))
+
+	serv := httptest.NewServer(mux)
+	defer serv.Close()
+
+	baseUrl := serv.URL
+	tc := serv.Client()
+
+	b := tests.GetBytes(4 * 1024)
+	chunkLimit := float64(1024)
+	chunks := math.Ceil(float64(len(b)) / chunkLimit)
+	compareBytes := [][]byte{}
+
+	fileName := "a text file.txt"
+	t.Cleanup(func() {
+		deleteTestFile(t, ap, db, fileName)
+	})
+
+	body, err := tests.NewRequestBody(RequestFileUploadInfo{
+		FileName:      fileName,
+		FileSize:      len(b),
+		FileParentId:  "",
+		FileExtension: ".txt",
+		TotalChunks:   int(chunks),
+	})
+	assert.Nil(t, err)
+
+	req, err := tests.NewRequest("POST", baseUrl+"/api/upload", body)
+	assert.Nil(t, err)
+
+	req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+	uploadres, err := tc.Do(req)
+	assert.Nil(t, err)
+	assert.True(t, uploadres.StatusCode <= 300)
+	defer uploadres.Body.Close()
+
+	var idres ApiResponse[string]
+	err = json.NewDecoder(uploadres.Body).Decode(&idres)
+	assert.Nil(t, err)
+	assert.Nil(t, idres.Error)
+
+	start := 0
+	end := int(chunkLimit)
+	for i := range int(chunks) {
+		if end > len(b) {
+			end = len(b)
+		}
+		compareBytes = append(compareBytes, b[start:end])
+		body := bytes.NewBuffer(b[start:end])
+		req, err := http.NewRequest("POST", baseUrl+"/api/upload/"+idres.Output+"/"+strconv.Itoa(i), body)
+		assert.Nil(t, err)
+
+		req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+		res, err := tc.Do(req)
+		assert.Nil(t, err)
+		assert.Equal(t, res.StatusCode, http.StatusOK)
+
+		start += int(chunkLimit)
+		end += int(chunkLimit)
+	}
+
+	uploadMap := ap.FileHandler.uploadSessions
+	reqMap, ok := uploadMap[idres.Output]
+	assert.True(t, ok)
+	assert.Equal(t, len(reqMap.ChunkIndexes), int(chunks))
+
+	for i := range int(chunks) {
+		chunkPath, ok := reqMap.ChunkIndexes[i]
+		assert.True(t, ok)
+
+		p := filepath.Join(chunkPath)
+		cb, err := os.ReadFile(p)
+		assert.Nil(t, err)
+
+		// this assumes that the file maintains order.. but i wrote the file name
+		// creation to maintain this order
+		baseBytes := compareBytes[i]
+
+		assert.Equal(t, string(baseBytes), string(cb))
+	}
+}
+
+func TestCompleteUploadFile(t *testing.T) {
+	gw, db := dbgateway.NewTestGatewayDB(t, dbgateway.GatewayDBOptions{CreateTemp: true})
+	ap := NewApiHandler(gw, tests.NewTestLogger())
+
+	mux := http.NewServeMux()
+	mux.Handle(FilePostUploadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadGenerateId))
+	mux.Handle(FilePostUploadFileChunkRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileChunk))
+	mux.Handle(FilePostUploadFileCompleteRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileComplete))
+
+	serv := httptest.NewServer(mux)
+	defer serv.Close()
+
+	baseUrl := serv.URL
+	tc := serv.Client()
+
+	b := tests.GetBytes(4 * 1024)
+	chunkLimit := float64(1024)
+	chunks := math.Ceil(float64(len(b)) / chunkLimit)
+
+	fileName := "a text file.txt"
+	t.Cleanup(func() {
+		deleteTestFile(t, ap, db, fileName)
+	})
+	body, err := tests.NewRequestBody(RequestFileUploadInfo{
+		FileName:      fileName,
+		FileSize:      len(b),
+		FileParentId:  "",
+		FileExtension: ".txt",
+		TotalChunks:   int(chunks),
+	})
+	assert.Nil(t, err)
+
+	req, err := tests.NewRequest("POST", baseUrl+"/api/upload", body)
+	assert.Nil(t, err)
+
+	req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+	uploadres, err := tc.Do(req)
+	assert.Nil(t, err)
+	assert.True(t, uploadres.StatusCode <= 300)
+	defer uploadres.Body.Close()
+
+	var idres ApiResponse[string]
+	err = json.NewDecoder(uploadres.Body).Decode(&idres)
+	assert.Nil(t, err)
+	assert.Nil(t, idres.Error)
+
+	start := 0
+	end := int(chunkLimit)
+	for i := range int(chunks) {
+		if end > len(b) {
+			end = len(b)
+		}
+		body := bytes.NewBuffer(b[start:end])
+		req, err := http.NewRequest("POST", baseUrl+"/api/upload/"+idres.Output+"/"+strconv.Itoa(i), body)
+		assert.Nil(t, err)
+		req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+		res, err := tc.Do(req)
+		assert.Nil(t, err)
+		assert.Equal(t, res.StatusCode, http.StatusOK)
+
+		start += int(chunkLimit)
+		end += int(chunkLimit)
+	}
+
+	req, err = tests.NewRequest("POST", baseUrl+"/api/upload/"+idres.Output+"/complete", nil)
+	assert.Nil(t, err)
+
+	req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+	res, err := tc.Do(req)
+	assert.Nil(t, err)
+	assert.True(t, res.StatusCode < 300)
+	defer res.Body.Close()
+
+	var apres ApiResponse[*file.FileResponse]
+	err = json.NewDecoder(res.Body).Decode(&apres)
+	assert.Nil(t, err)
+	assert.Nil(t, apres.Error)
+
+	t.Cleanup(func() {
+		dbgateway.DropRows(db, file.TableName, file.ColumnFileID, apres.Output.FileID)
+	})
+
+	fi, err := ap.gateway.File.GetFile(tests.DbRowInfo.AccountID, apres.Output.FileID)
+	assert.Nil(t, err)
+	assert.Equal(t, fi.Name, fileName)
+
+	fiPath := filepath.Join(gw.Dir.Storage, fi.Path)
+
+	stat, err := os.Stat(fiPath)
+	assert.Nil(t, err)
+
+	assert.Equal(t, stat.Name(), fi.FileID)
+	assert.Equal(t, string(fi.UploadStatus), string(file.UploadCompleted))
+}
+
+func TestCompleteUploadErrorFile(t *testing.T) {
+	gw, db := dbgateway.NewTestGatewayDB(t, dbgateway.GatewayDBOptions{CreateTemp: true})
+	ap := NewApiHandler(gw, tests.NewTestLogger())
+
+	mux := http.NewServeMux()
+	mux.Handle(FilePostUploadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadGenerateId))
+	mux.Handle(FilePostUploadFileChunkRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileChunk))
+	mux.Handle(FilePostUploadFileCompleteRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileComplete))
+
+	serv := httptest.NewServer(mux)
+	defer serv.Close()
+
+	baseUrl := serv.URL
+	tc := serv.Client()
+
+	b := tests.GetBytes(4 * 1024)
+	chunkLimit := float64(1024)
+	chunks := math.Ceil(float64(len(b)) / chunkLimit)
+
+	fileName := "a text file.txt"
+	t.Cleanup(func() {
+		deleteTestFile(t, ap, db, fileName)
+	})
+	body, err := tests.NewRequestBody(RequestFileUploadInfo{
+		FileName:      fileName,
+		FileSize:      len(b),
+		FileParentId:  "",
+		FileExtension: ".txt",
+		TotalChunks:   int(chunks),
+	})
+	assert.Nil(t, err)
+
+	req, err := tests.NewRequest("POST", baseUrl+"/api/upload", body)
+	assert.Nil(t, err)
+
+	req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+	uploadres, err := tc.Do(req)
+	assert.Nil(t, err)
+	assert.True(t, uploadres.StatusCode <= 300)
+	defer uploadres.Body.Close()
+
+	var idres ApiResponse[string]
+	err = json.NewDecoder(uploadres.Body).Decode(&idres)
+	assert.Nil(t, err)
+	assert.Nil(t, idres.Error)
+
+	cinfo, ok := ap.FileHandler.uploadSessions[idres.Output]
+	assert.True(t, ok)
+
+	t.Cleanup(func() {
+		dbgateway.DropRows(db, file.TableName, file.ColumnFileID, cinfo.FileInfo.FileID)
+	})
+
+	start := 0
+	end := int(chunkLimit)
+	for i := range int(chunks) {
+		if end > len(b) {
+			end = len(b)
+		}
+		body := bytes.NewBuffer(b[start:end])
+		req, err := http.NewRequest("POST", baseUrl+"/api/upload/"+idres.Output+"/"+strconv.Itoa(i), body)
+		assert.Nil(t, err)
+		req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+		res, err := tc.Do(req)
+		assert.Nil(t, err)
+		assert.Equal(t, res.StatusCode, http.StatusOK)
+
+		start += int(chunkLimit)
+		end += int(chunkLimit)
+	}
+
+	req, err = tests.NewRequest("POST", baseUrl+"/api/upload/"+idres.Output+"/complete", nil)
+	assert.Nil(t, err)
+
+	req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+	osCreateOriginal := osCreate
+	defer func() { osCreate = osCreateOriginal }()
+	osCreate = func(name string) (*os.File, error) {
+		return nil, fmt.Errorf("Mock error")
+	}
+
+	res, err := tc.Do(req)
+	assert.Nil(t, err)
+	defer res.Body.Close()
+
+	var apires ApiResponse[any]
+	err = json.NewDecoder(res.Body).Decode(&apires)
+	assert.Nil(t, err)
+	assert.NotNil(t, apires.Error)
+
+	// fresh update
+	fi, err := gw.File.GetFile(cinfo.FileInfo.OwnerID, cinfo.FileInfo.FileID)
+	assert.Nil(t, err)
+
+	assert.Equal(t, string(cinfo.FileInfo.UploadStatus), string(file.UploadPending))
+	assert.Equal(t, string(fi.UploadStatus), string(file.UploadFailed))
+}
+
+func TestAddFolder(t *testing.T) {
+	gw, db := dbgateway.NewTestGatewayDB(t)
+	ap := NewApiHandler(gw, tests.NewTestLogger())
+
+	mux := http.NewServeMux()
+
+	mux.Handle(FilePostAddFolderRoute, ap.CreateAuthMiddleware(ap.FileHandler.PostAddFolder))
+	serv := httptest.NewServer(mux)
+
+	tc := serv.Client()
+	defer serv.Close()
+
+	folderName := "very secret folder"
+	reqData := RequestAddFolderInfo{
+		Name:     folderName,
+		ParentId: folderName,
+	}
+	reqBody, err := json.Marshal(reqData)
+	assert.Nil(t, err)
+
+	req, err := tests.NewRequest("POST", serv.URL+"/api/folders/add", bytes.NewBuffer(reqBody))
+	assert.Nil(t, err)
+
+	req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+	res, err := tc.Do(req)
+	assert.Nil(t, err)
+	assert.True(t, res.StatusCode < 400)
+	defer res.Body.Close()
+
+	var apires ApiResponse[file.FileResponse]
+	err = json.NewDecoder(res.Body).Decode(&apires)
+	assert.Nil(t, err)
+	assert.Equal(t, apires.Status, StatusSuccess)
+
+	fileRes := apires.Output
+	t.Cleanup(func() {
+		dbgateway.DropRows(db, file.TableName, file.ColumnFileID, fileRes.FileID)
+	})
+
+	af, err := ap.gateway.File.GetFile(tests.DbRowInfo.AccountID, fileRes.FileID)
+	assert.Nil(t, err)
+	assert.NotNil(t, af)
+	assert.TrueAll(t, af.Name == fileRes.Name, af.FileID == fileRes.FileID, af.Type == fileRes.Type)
+}
+
+func TestUpdateStatusFailSuccess(t *testing.T) {
+	gw, db := dbgateway.NewTestGatewayDB(t, dbgateway.GatewayDBOptions{CreateTemp: true})
+	ap := NewApiHandler(gw, tests.NewTestLogger())
+
+	mux := http.NewServeMux()
+	mux.Handle(FilePostUploadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadGenerateId))
+	mux.Handle(FilePatchUpdateFileStatus, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileStatusFailed))
+
+	serv := httptest.NewServer(mux)
+	defer serv.Close()
+
+	tc := serv.Client()
+	fileName := "video.mp4"
+	t.Cleanup(func() {
+		deleteTestFile(t, ap, db, fileName)
+	})
+
+	body, err := tests.NewRequestBody(RequestFileUploadInfo{
+		FileName:      fileName,
+		FileSize:      12345555,
+		FileParentId:  "",
+		FileExtension: ".mp4",
+		TotalChunks:   15,
+	})
+	assert.Nil(t, err)
+
+	req, err := tests.NewRequest("POST", serv.URL+"/api/upload", body)
+	assert.Nil(t, err)
+
+	req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+	res, err := tc.Do(req)
+	assert.Nil(t, err)
+	defer res.Body.Close()
+
+	var idres ApiResponse[string]
+	err = json.NewDecoder(res.Body).Decode(&idres)
+	assert.Nil(t, err)
+
+	req, err = tests.NewRequest("PATCH", serv.URL+"/api/upload/"+idres.Output+"/fail", nil)
+	assert.Nil(t, err)
+
+	req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+	res, err = tc.Do(req)
+	assert.Nil(t, err)
+	defer res.Body.Close()
+
+	var upres ApiResponse[bool]
+	err = json.NewDecoder(res.Body).Decode(&upres)
+	assert.Nil(t, upres.Error)
+	assert.True(t, upres.Output)
+
+	files, err := gw.File.GetAllFiles(tests.DbRowInfo.AccountID)
+	assert.Nil(t, err)
+
+	var genFile *file.FileResponse
+	for _, fi := range files {
+		if fi.Name == fileName {
+			genFile = &fi
+			break
+		}
+	}
+
+	assert.NotNil(t, genFile)
+	assert.Equal(t, string(genFile.UploadStatus), string(file.UploadFailed))
+}
+
+// deleteTestFile deletes a given file name from the File database of the default
+// test account.
+func deleteTestFile(t *testing.T, ap *ApiHandler, db *sql.DB, fileName string) {
+	files, err := ap.gateway.File.GetAllFiles(tests.DbRowInfo.AccountID)
+	assert.Nil(t, err)
+
+	for _, fi := range files {
+		if fi.Name == fileName {
+			dbgateway.DropRows(db, file.TableName, file.ColumnFileID, fi.FileID)
+		}
+	}
 }

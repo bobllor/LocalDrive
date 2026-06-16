@@ -24,14 +24,16 @@ type Error struct {
 	Message string `json:"message"`
 }
 
-// ApiResponse is the response streamed to the client from the server.
+// ApiResponse is the response to the client from the server.
 // This is the standardized response for the backend system for all handlers.
-type ApiResponse struct {
+//
+// The ApiResponse takes a type T which represents the Output of the response.
+type ApiResponse[T any] struct {
 	// Status is the status of the response.
 	Status StatusType `json:"status"`
 
 	// Output is the output data to the response. It can be omitted.
-	Output any `json:"output,omitempty"`
+	Output T `json:"output,omitempty"`
 
 	// Error is an Error type that occurred due to an issue with the request or backend.
 	// It can be omitted.
@@ -39,8 +41,8 @@ type ApiResponse struct {
 }
 
 // NewApiResponse creates a new success API response for successful requests.
-func NewApiResponse(output any) *ApiResponse {
-	res := &ApiResponse{
+func NewApiResponse[T any](output T) *ApiResponse[T] {
+	res := &ApiResponse[T]{
 		Status: StatusSuccess,
 		Output: output,
 	}
@@ -53,8 +55,8 @@ func NewApiResponse(output any) *ApiResponse {
 // statusCode is the type of status code int.
 //
 // errMessage is the message string to send back to the client.
-func NewApiResponseError(statusCode int, errMessage string, reason ReasonCode) *ApiResponse {
-	res := &ApiResponse{
+func NewApiResponseError(statusCode int, errMessage string, reason ReasonCode) *ApiResponse[any] {
+	res := &ApiResponse[any]{
 		Status: StatusError,
 		Error: &Error{
 			Code:    statusCode,

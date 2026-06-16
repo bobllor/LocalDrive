@@ -1,13 +1,13 @@
 package dbgateway
 
 import (
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/bobllor/assert"
 	"github.com/bobllor/cloud-project/src/file"
 	"github.com/bobllor/cloud-project/src/tests"
+	"github.com/bobllor/cloud-project/src/user"
 	"github.com/bobllor/cloud-project/src/utils"
 )
 
@@ -87,7 +87,7 @@ func TestAddFile(t *testing.T) {
 		fileIDs = append(fileIDs, files[i].FileID)
 	}
 
-	err = fDb.AddFile(files)
+	err = fDb.AddFile(files...)
 	assert.Nil(t, err)
 
 	qFiles, err := fDb.GetAllFiles(tests.DbRowInfo.AccountID)
@@ -99,6 +99,123 @@ func TestAddFile(t *testing.T) {
 
 	defer t.Cleanup(func() {
 		DropRows(fDb.database, file.TableName, file.ColumnFileID, utils.ConvertToAny(fileIDs)...)
+	})
+}
+
+func TestAddFileDuplicate(t *testing.T) {
+	gw, db := NewTestGatewayDB(t)
+
+	t.Run("Duplicate file error", func(t *testing.T) {
+		fi := file.NewFile(
+			tests.DbRowInfo.AccountID,
+			tests.DbRowInfo.FileName,
+			file.FileTypeFile,
+			"txt",
+			0,
+			"",
+			file.UploadPending,
+		)
+
+		// not needed for this test run but using just in case
+		t.Cleanup(func() {
+			DropRows(db, file.TableName, file.ColumnFileID, fi.FileID)
+		})
+
+		err := gw.File.AddFile(fi)
+		assert.NotNil(t, err)
+		assert.True(t, IsDuplicateSqlError(err))
+	})
+
+	t.Run("Duplicate name pass diff parent ID", func(t *testing.T) {
+		fi := file.NewFile(
+			tests.DbRowInfo.AccountID,
+			tests.DbRowInfo.FileName,
+			file.FileTypeFile,
+			"txt",
+			0,
+			"parentid1",
+			file.UploadPending,
+		)
+
+		t.Cleanup(func() {
+			DropRows(db, file.TableName, file.ColumnFileID, fi.FileID)
+		})
+
+		err := gw.File.AddFile(fi)
+		assert.Nil(t, err)
+
+		_, err = gw.File.GetFile(tests.DbRowInfo.AccountID, fi.FileID)
+		assert.Nil(t, err)
+	})
+
+	t.Run("Duplicate name pass different account ID", func(t *testing.T) {
+		username := "iamauser"
+		usr, err := gw.User.AddUser(username, "1234!password")
+		assert.Nil(t, err)
+
+		t.Cleanup(func() {
+			// cascade deletion
+			DropRows(db, user.TableName, user.ColumnAccountID, usr.AccountID)
+		})
+
+		fi := file.NewFile(
+			usr.AccountID,
+			tests.DbRowInfo.FileName,
+			file.FileTypeFile,
+			"txt",
+			0,
+			"",
+			file.UploadPending,
+		)
+
+		err = gw.File.AddFile(fi)
+		assert.Nil(t, err)
+
+		bfi, err := gw.File.GetFile(usr.AccountID, fi.FileID)
+		assert.Nil(t, err)
+		assert.NotNil(t, bfi)
+
+		assert.Equal(t, bfi.Name, fi.Name)
+		assert.Equal(t, bfi.Extension, fi.Extension)
+	})
+
+	t.Run("Add folders no duplicate error", func(t *testing.T) {
+		folderName := "a folder here"
+		folder1 := file.NewFile(
+			tests.DbRowInfo.AccountID,
+			folderName,
+			file.FileTypeDir,
+			"",
+			0,
+			"",
+			file.UploadCompleted,
+		)
+
+		folder2 := file.NewFile(
+			tests.DbRowInfo.AccountID,
+			folderName,
+			file.FileTypeDir,
+			"",
+			0,
+			"",
+			file.UploadCompleted,
+		)
+
+		t.Cleanup(func() {
+			DropRows(db, file.TableName, file.ColumnFileID, folder1.FileID)
+			DropRows(db, file.TableName, file.ColumnFileID, folder2.FileID)
+		})
+
+		err := gw.File.AddFile(folder1, folder2)
+		assert.Nil(t, err)
+
+		bf1, err := gw.File.GetFile(tests.DbRowInfo.AccountID, folder1.FileID)
+		assert.Nil(t, err)
+		bf2, err := gw.File.GetFile(tests.DbRowInfo.AccountID, folder2.FileID)
+		assert.Nil(t, err)
+
+		assert.Equal(t, bf1.Name, folderName)
+		assert.Equal(t, bf2.Name, folderName)
 	})
 }
 
@@ -173,17 +290,56 @@ func TestUpdateModifiedFile(t *testing.T) {
 	assert.Equal(t, baseDate.Compare(newDate), -1)
 }
 
-func TestAddDuplicateFileError(t *testing.T) {
+func TestAddDuplicateFile(t *testing.T) {
 	fDb, err := getTestFileGateway()
 	assert.Nil(t, err)
 
-	f := file.File{
-		OwnerID: tests.DbRowInfo.AccountID,
-		FileID:  tests.DbRowInfo.FileID,
+	cases := []struct {
+		f     file.File
+		isErr bool
+		name  string
+	}{
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileName,
+				file.FileTypeFile, "txt", 0, "", file.UploadCompleted),
+			isErr: true,
+			name:  "Duplicate error existing file",
+		},
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileName,
+				file.FileTypeFile, "txt", 0, "", file.UploadFailed),
+			name: "Duplicate success failed upload",
+		},
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileName,
+				file.FileTypeFile, "txt", 0, "", file.UploadPending),
+			isErr: true,
+			name:  "Duplicate error pending existing file",
+		},
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileName,
+				file.FileTypeDir, "", 0, "", file.UploadCompleted),
+			name: "Duplicate folder name success",
+		},
 	}
 
-	err = fDb.AddFile([]file.File{f})
-	assert.NotNil(t, err)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err = fDb.AddFile(c.f)
+
+			t.Cleanup(func() {
+				DropRows(fDb.database, file.TableName, file.ColumnFileID, c.f.FileID)
+			})
+
+			if c.isErr {
+				assert.NotNil(t, err)
+				assert.True(t, IsDuplicateSqlError(err))
+			} else {
+				assert.Nil(t, err)
+			}
+		})
+	}
+
 }
 
 func TestAddMissingOwnerIDFileError(t *testing.T) {
@@ -195,9 +351,8 @@ func TestAddMissingOwnerIDFileError(t *testing.T) {
 		ModifiedOn: time.Now().UTC(),
 	}
 
-	err = fDb.AddFile([]file.File{f})
+	err = fDb.AddFile(f)
 	assert.NotNil(t, err)
-	assert.True(t, errors.Is(err, SqlErr))
 }
 
 func TestUpdateFiles(t *testing.T) {
@@ -230,6 +385,67 @@ func TestUpdateFiles(t *testing.T) {
 	assert.Equal(t, baseTime.UTC().Compare(fileRes.ModifiedOn), -1)
 }
 
+func TestRenameDuplicateFiles(t *testing.T) {
+	gw, db := NewTestGatewayDB(t)
+
+	cases := []struct {
+		f           file.File
+		isErr       bool
+		newFileName string
+		name        string
+	}{
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, "afilename", file.FileTypeFile, "txt",
+				0, "", file.UploadCompleted),
+			newFileName: tests.DbRowInfo.FileName,
+			isErr:       true,
+			name:        "Rename file duplicate error",
+		},
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, "afilename", file.FileTypeFile, "txt",
+				0, "", file.UploadCompleted),
+			newFileName: tests.DbRowInfo.FileName,
+			isErr:       true,
+			name:        "Rename file pending duplicate error",
+		},
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, "afilename", file.FileTypeFile, "txt",
+				0, "12345", file.UploadCompleted),
+			newFileName: tests.DbRowInfo.FileName,
+			name:        "Rename file success different parent ID",
+		},
+		{
+			f: file.NewFile(tests.DbRowInfo.AccountID, "afilename", file.FileTypeFile, "txt",
+				0, "12345", file.UploadCompleted),
+			newFileName: "different file name",
+			name:        "Rename file success",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Cleanup(func() {
+				DropRows(db, file.TableName, file.ColumnFileID, c.f.FileID)
+			})
+
+			err := gw.File.AddFile(c.f)
+			assert.Nil(t, err)
+
+			err = gw.File.RenameFile(tests.DbRowInfo.AccountID, c.f.FileID, c.newFileName)
+			if c.isErr {
+				assert.NotNil(t, err)
+				assert.True(t, IsDuplicateSqlError(err))
+			} else {
+				assert.Nil(t, err)
+				fi, err := gw.File.GetFile(c.f.OwnerID, c.f.FileID)
+				assert.Nil(t, err)
+				assert.NotNil(t, fi)
+				assert.Equal(t, fi.Name, c.newFileName)
+			}
+		})
+	}
+}
+
 func TestGetFilesByAccountIDAndParentFolder(t *testing.T) {
 	fg, err := getTestFileGateway()
 	assert.Nil(t, err)
@@ -244,12 +460,13 @@ func TestGetFilesByAccountIDAndParentFolder(t *testing.T) {
 	t.Run("Child folder", func(t *testing.T) {
 		// not located in tests.DbRowInfo, obtained from the test SQL script
 		parent := "randomfolderidhere"
-		baseName := "test2.txt"
+		baseName := "test2"
 		files, err := fg.GetFilesByAccountIdAndParentId(tests.DbRowInfo.AccountID, parent)
 		assert.Nil(t, err)
 
 		assert.Equal(t, len(files), 1)
 		assert.Equal(t, files[0].Name, baseName)
+		assert.Equal(t, files[0].Extension, "txt")
 	})
 
 	t.Run("Invalid folder", func(t *testing.T) {
@@ -291,13 +508,51 @@ func TestRenameFileName(t *testing.T) {
 			file.TableName,
 			file.ColumnFileID,
 			tests.DbRowInfo.FileID,
-			[]string{file.ColumnFileName},
+			[]string{file.ColumnFileName, file.ColumnUniqueHash},
 			tests.DbRowInfo.FileName,
+			tests.DbRowInfo.UniqueHash,
 		)
 	})
 
+	// confirming the hash is changed
 	err = fg.RenameFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID, newFileName)
 	assert.Nil(t, err)
+	fi, err := fg.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
+	assert.Nil(t, err)
+
+	assert.NotEqual(t, fi.UniqueHash, tests.DbRowInfo.UniqueHash)
+
+	// confirming the hash is back to its default value
+	err = fg.RenameFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID, tests.DbRowInfo.FileName)
+	assert.Nil(t, err)
+	fi, err = fg.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
+	assert.Nil(t, err)
+	assert.NotNil(t, fi)
+
+	assert.Equal(t, fi.UniqueHash, tests.DbRowInfo.UniqueHash)
+}
+
+func TestUpdateUploadStatus(t *testing.T) {
+	gw, db := NewTestGatewayDB(t)
+
+	f1 := file.NewFile(tests.DbRowInfo.AccountID, "filename1234", file.FileTypeFile,
+		"pdf", 0, "", file.UploadPending)
+
+	t.Cleanup(func() {
+		DropRows(db, file.TableName, file.ColumnFileID, f1.FileID)
+	})
+
+	err := gw.File.AddFile(f1)
+	assert.Nil(t, err)
+
+	err = gw.File.UpdateUploadStatus(tests.DbRowInfo.AccountID, f1.FileID, file.UploadFailed)
+	assert.Nil(t, err)
+
+	bf, err := gw.File.GetFile(tests.DbRowInfo.AccountID, f1.FileID)
+	assert.Nil(t, err)
+	assert.NotNil(t, bf)
+
+	assert.Equal(t, string(bf.UploadStatus), string(file.UploadFailed))
 }
 
 // getFileDb gets the [FileGateway] for the test database.
