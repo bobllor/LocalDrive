@@ -548,6 +548,9 @@ func (fh *FileHandler) UploadFileStatusFailed(w http.ResponseWriter, r *http.Req
 	}
 
 	fh.util.Log.Debugf("Wrote %d bytes to response", n)
+
+	fh.uploadMutex.Remove(sessionId)
+	delete(fh.uploadSessions, sessionId)
 }
 
 // PostAddFolder adds a folder to a user. It uses a response body containing
