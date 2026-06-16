@@ -59,4 +59,4 @@ export async function fetchApi<T>(path: string, method: Method = "GET", data?: {
     return r;
 }
 
-export type Method = "GET" | "POST" | "PUT" | "DELETE";
+export type Method = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
