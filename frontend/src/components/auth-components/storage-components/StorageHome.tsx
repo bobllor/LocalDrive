@@ -63,19 +63,22 @@ export default function StorageHome(): JSX.Element{
                     }
                 </div>
                 {/* file is hidden, the FileOpButton will trigger the upload */}
-                <input type="file" hidden onChange={() => onInputFileChange(inputUploadFileRef, params.folderId)} ref={inputUploadFileRef} />
+                <input type="file" hidden onChange={
+                    () => onInputFileChangeUploadFile(inputUploadFileRef, params.folderId)
+                } 
+                    ref={inputUploadFileRef} />
             </div> 
         </>
     )
 }
 
 /**
- * Handles uploading a file to the backend. If 
+ * Handles uploading a file to the backend.
  * @param ref The reference object of the file uploading input element
  * @param parentId The parent ID of the file, can be undefined or empty
  * @returns 
  */
-async function onInputFileChange(ref: RefObject<HTMLInputElement | null>, parentId?: string){
+async function onInputFileChangeUploadFile(ref: RefObject<HTMLInputElement | null>, parentId?: string){
     if(!ref.current){
         return;
     }
@@ -84,10 +87,43 @@ async function onInputFileChange(ref: RefObject<HTMLInputElement | null>, parent
         return;
     }
 
-    try{
-        const uploader = new FileUploader(ref.current.files);
+    const addFileResponse = useFileStore.getState().addFileResponse;
+    const uploader = new FileUploader();
 
-        await uploader.upload(parentId);
+    try{
+        const files = ref.current.files;
+
+        for(let i = 0; i < files.length; i++){
+            const file = files.item(i);
+            if(!file){
+                console.error(`File (index ${i}) is null from FileList:`, files);
+                continue;
+            }
+
+            const reqBody = uploader.newRequestBody(file, parentId);
+            
+            const uploadSessionId = await uploader.generateUploadId(reqBody);
+
+            try{
+                const fileRes = await uploader.upload(file, uploadSessionId, parentId);
+                if(fileRes !== undefined){
+                    addFileResponse(fileRes, parentId);
+                }
+            }catch(uploadErr){
+                // TODO: set the upload state to fail on the UI
+                // errors are handled in the uploader.
+                if(uploadSessionId != undefined){
+                    await uploader.failUpload(uploadSessionId);
+                }
+                console.error("An error occurred while uploading:", uploadErr);
+            }
+        }
+    }catch(err){
+        // TODO: add an upload UI/UX loader thingy, or in other words
+        // the component that displays the file progress. also includes retries
+        // and failures.
+        // TODO: the chunk index, where it failed, and the File object needs to be tracked.
+        console.error("An uncaught error occurred during uploading:", err);
     }finally{
         // resets the input file
         inputEle.value = "";
