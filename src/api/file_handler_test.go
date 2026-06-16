@@ -594,6 +594,74 @@ func TestAddFolder(t *testing.T) {
 	assert.TrueAll(t, af.Name == fileRes.Name, af.FileID == fileRes.FileID, af.Type == fileRes.Type)
 }
 
+func TestUpdateStatusFailSuccess(t *testing.T) {
+	gw, db := dbgateway.NewTestGatewayDB(t, dbgateway.GatewayDBOptions{CreateTemp: true})
+	ap := NewApiHandler(gw, tests.NewTestLogger())
+
+	mux := http.NewServeMux()
+	mux.Handle(FilePostUploadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadGenerateId))
+	mux.Handle(FilePatchUpdateFileStatus, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileStatusFailed))
+
+	serv := httptest.NewServer(mux)
+	defer serv.Close()
+
+	tc := serv.Client()
+	fileName := "video.mp4"
+	t.Cleanup(func() {
+		deleteTestFile(t, ap, db, fileName)
+	})
+
+	body, err := tests.NewRequestBody(RequestFileUploadInfo{
+		FileName:      fileName,
+		FileSize:      12345555,
+		FileParentId:  "",
+		FileExtension: ".mp4",
+		TotalChunks:   15,
+	})
+	assert.Nil(t, err)
+
+	req, err := tests.NewRequest("POST", serv.URL+"/api/upload", body)
+	assert.Nil(t, err)
+
+	req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+	res, err := tc.Do(req)
+	assert.Nil(t, err)
+	defer res.Body.Close()
+
+	var idres ApiResponse[string]
+	err = json.NewDecoder(res.Body).Decode(&idres)
+	assert.Nil(t, err)
+
+	req, err = tests.NewRequest("PATCH", serv.URL+"/api/upload/"+idres.Output+"/fail", nil)
+	assert.Nil(t, err)
+
+	req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+	res, err = tc.Do(req)
+	assert.Nil(t, err)
+	defer res.Body.Close()
+
+	var upres ApiResponse[bool]
+	err = json.NewDecoder(res.Body).Decode(&upres)
+	assert.Nil(t, upres.Error)
+	assert.True(t, upres.Output)
+
+	files, err := gw.File.GetAllFiles(tests.DbRowInfo.AccountID)
+	assert.Nil(t, err)
+
+	var genFile *file.FileResponse
+	for _, fi := range files {
+		if fi.Name == fileName {
+			genFile = &fi
+			break
+		}
+	}
+
+	assert.NotNil(t, genFile)
+	assert.Equal(t, string(genFile.UploadStatus), string(file.UploadFailed))
+}
+
 // deleteTestFile deletes a given file name from the File database of the default
 // test account.
 func deleteTestFile(t *testing.T, ap *ApiHandler, db *sql.DB, fileName string) {
