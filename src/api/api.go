@@ -123,7 +123,7 @@ func (ah *ApiHandler) middlewareHandler(f func(http.ResponseWriter, *http.Reques
 
 		r = ah.writeContext(r, CONTEXT_REQUEST_ID_KEY, requestID)
 
-		WriteHeaders(w, r)
+		// headers are written in the server mux
 
 		next.ServeHTTP(w, r)
 
