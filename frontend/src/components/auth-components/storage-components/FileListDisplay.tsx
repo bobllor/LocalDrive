@@ -11,7 +11,7 @@ type TableHeadObj = {
 }
 
 type FileListDisplayProps = {
-    files: Array<FileResponse>,
+    files?: Array<FileResponse>,
 }
 
 type FileObjProps = {
@@ -36,9 +36,7 @@ export default function FileListDisplay({files}: FileListDisplayProps): JSX.Elem
     const clearFileIds = useFileListStore(state => state.clearFileIds);
 
     // files in progress will not be updated
-    const filesMap = files.filter(fileObj => {
-        return fileObj.uploadStatus === "completed";
-    });
+    const filesMap = files ? files.filter(fileObj => fileObj.uploadStatus === "completed") : [];
 
     return (
         <table 
@@ -48,7 +46,7 @@ export default function FileListDisplay({files}: FileListDisplayProps): JSX.Elem
                     {THEAD_ELEMENTS.map((tObj, i) => 
                         <th 
                         onClick={clearFileIds}
-                        className="w-full"
+                        className=""
                         key={i}>
                             <span>
                                 {tObj.text}
