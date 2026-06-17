@@ -88,7 +88,6 @@ export const useFileStore = create<FileStore>((set, get) => ({
         // TODO: log properly
         const files = get().files;
         const key = getParentIdUndefined(parentId);
-        console.debug(`Parent ID: ${key}`);
 
         return files[key];
     },
