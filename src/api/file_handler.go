@@ -21,7 +21,7 @@ import (
 const (
 	FileGetFileRootRoute            = "GET /api/storage"
 	FileGetFileParentRoute          = "GET /api/storage/folder/{parentId}"
-	FileGetFolderParentsRoute       = "GET /api/folders/{folderId}/parents"
+	FileGetFolderBreadcrumbsRoute   = "GET /api/folders/{folderId}/breadcrumbs"
 	FilePostUploadFileRoute         = "POST /api/upload"
 	FilePostUploadFileChunkRoute    = "POST /api/upload/{id}/{chunkIndex}"
 	FilePostUploadFileCompleteRoute = "POST /api/upload/{id}/complete"

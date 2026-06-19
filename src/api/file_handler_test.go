@@ -685,7 +685,7 @@ func TestGetFolderBreadcrumbs(t *testing.T) {
 	tc := serv.Client()
 
 	t.Run("Normal run", func(t *testing.T) {
-		req, err := tests.NewRequest("GET", serv.URL+"/api/folders/"+f2.FileID+"/parents", nil)
+		req, err := tests.NewRequest("GET", serv.URL+"/api/folders/"+f2.FileID+"/breadcrumbs", nil)
 		assert.Nil(t, err)
 
 		req.AddCookie(tests.GetCookie(CookieSessionKey))
@@ -703,7 +703,7 @@ func TestGetFolderBreadcrumbs(t *testing.T) {
 	})
 
 	t.Run("Invalid ID", func(t *testing.T) {
-		req, err := tests.NewRequest("GET", serv.URL+"/api/folders/"+"abcdefg1234"+"/parents", nil)
+		req, err := tests.NewRequest("GET", serv.URL+"/api/folders/"+"abcdefg1234"+"/breadcrumbs", nil)
 		assert.Nil(t, err)
 
 		req.AddCookie(tests.GetCookie(CookieSessionKey))
@@ -731,7 +731,7 @@ func newTestServer(gw *dbgateway.Gateway) *httptest.Server {
 	mux.Handle(FileGetFileParentRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFiles))
 	mux.Handle(FilePostDownloadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.DownloadFile))
 	mux.Handle(FilePostAddFolderRoute, ap.CreateAuthMiddleware(ap.FileHandler.PostAddFolder))
-	mux.Handle(FileGetFolderParentsRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFolderBreadcrumbs))
+	mux.Handle(FileGetFolderBreadcrumbsRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFolderBreadcrumbs))
 
 	serv := httptest.NewServer(mux)
 
