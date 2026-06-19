@@ -662,6 +662,82 @@ func TestUpdateStatusFailSuccess(t *testing.T) {
 	assert.Equal(t, string(genFile.UploadStatus), string(file.UploadFailed))
 }
 
+func TestGetFolderBreadcrumbs(t *testing.T) {
+	gw, db := dbgateway.NewTestGatewayDB(t)
+
+	f1 := file.NewFile(tests.DbRowInfo.AccountID, "folder2",
+		file.FileTypeDir, "", 0, tests.DbRowInfo.ParentID, file.UploadCompleted)
+	f2 := file.NewFile(tests.DbRowInfo.AccountID, "folder3",
+		file.FileTypeDir, "", 0, f1.FileID, file.UploadCompleted)
+
+	files := []file.File{f1, f2}
+
+	err := gw.File.AddFile(files...)
+	assert.Nil(t, err)
+
+	t.Cleanup(func() {
+		for _, f := range files {
+			dbgateway.DropRows(db, file.TableName, file.ColumnFileID, f.FileID)
+		}
+	})
+
+	serv := newTestServer(gw)
+	tc := serv.Client()
+
+	t.Run("Normal run", func(t *testing.T) {
+		req, err := tests.NewRequest("GET", serv.URL+"/api/folders/"+f2.FileID+"/parents", nil)
+		assert.Nil(t, err)
+
+		req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+		res, err := tc.Do(req)
+		assert.Nil(t, err)
+		defer res.Body.Close()
+
+		var apres ApiResponse[[]dbgateway.FileFolderInfo]
+		err = json.NewDecoder(res.Body).Decode(&apres)
+		assert.Nil(t, err)
+		assert.NotNil(t, apres.Output)
+
+		assert.Equal(t, len(apres.Output), 3)
+	})
+
+	t.Run("Invalid ID", func(t *testing.T) {
+		req, err := tests.NewRequest("GET", serv.URL+"/api/folders/"+"abcdefg1234"+"/parents", nil)
+		assert.Nil(t, err)
+
+		req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+		res, err := tc.Do(req)
+
+		assert.Nil(t, err)
+		assert.Equal(t, res.StatusCode, http.StatusBadRequest)
+	})
+}
+
+// newTestServer creates a new test HTTP server with all the
+// default routes and functions from the File handler. It will automatically
+// wrap handlers in middleware.
+func newTestServer(gw *dbgateway.Gateway) *httptest.Server {
+	ap := NewApiHandler(gw, tests.NewTestLogger())
+
+	mux := http.NewServeMux()
+
+	mux.Handle(FilePostUploadFileChunkRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileChunk))
+	mux.Handle(FilePostUploadFileCompleteRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileComplete))
+	mux.Handle(FilePostUploadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadGenerateId))
+	mux.Handle(FilePatchUpdateFileStatus, ap.CreateRequestMiddleware(ap.FileHandler.UploadFileStatusFailed))
+	mux.Handle(FileGetFileRootRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFiles))
+	mux.Handle(FileGetFileParentRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFiles))
+	mux.Handle(FilePostDownloadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.DownloadFile))
+	mux.Handle(FilePostAddFolderRoute, ap.CreateAuthMiddleware(ap.FileHandler.PostAddFolder))
+	mux.Handle(FileGetFolderParentsRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFolderBreadcrumbs))
+
+	serv := httptest.NewServer(mux)
+
+	return serv
+}
+
 // deleteTestFile deletes a given file name from the File database of the default
 // test account.
 func deleteTestFile(t *testing.T, ap *ApiHandler, db *sql.DB, fileName string) {
