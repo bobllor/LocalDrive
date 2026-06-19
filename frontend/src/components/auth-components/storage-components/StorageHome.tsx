@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type JSX, type RefObject } from "react";
+import { Suspense, useEffect, useRef, useState, type JSX, type RefObject } from "react";
 import { useNavigate, useParams } from "react-router";
 import { fetchApi } from "../../../functions/fetchtils";
 import { useFileStore, type FileResponse } from "../../../context/FileStore";
@@ -8,6 +8,7 @@ import BackgroundBlur from "../../ui/BackgroundBlur";
 import AddFolderOp from "./file-ops-components/AddFolderOp";
 import ModalBase from "../../ui/ModalBase";
 import { FileUploader } from "./file-ops-components/file-uploader";
+import Breadcrumbs from "./ui/Breadcrumbs";
 
 export default function StorageHome(): JSX.Element{
     /**
@@ -53,21 +54,23 @@ export default function StorageHome(): JSX.Element{
                     </ModalBase>
                 </BackgroundBlur>
             }
-            <div className="flex flex-col justify-center items-center gap-1">
+            <div className="flex flex-col justify-center items-center gap-1 w-full">
                 <FileOpButton setBlur={setShowBlur} setFileOp={setFileOp} fileUploadRef={inputUploadFileRef} />
-                <button onClick={logout} className="border w-fit h-fit py-2 px-4">Logout</button>
-                <div className="border w-full">
-                    {files !== undefined
-                    ? <FileListDisplay files={files} />
-                    : <div>Loading...</div>
-                    }
+                <button onClick={logout} className="border w-fit h-fit py-2 px-4">
+                    Logout
+                </button>
+                <Breadcrumbs />
+                <div className="w-full border">
+                    <Suspense fallback={<div>Temporary: Loading...</div>}>
+                        <FileListDisplay files={files} />
+                    </Suspense>
                 </div>
-                {/* file is hidden, the FileOpButton will trigger the upload */}
-                <input type="file" hidden onChange={
-                    () => onInputFileChangeUploadFile(inputUploadFileRef, params.folderId)
-                } 
-                    ref={inputUploadFileRef} />
             </div> 
+            {/* file is hidden, the FileOpButton will trigger the upload */}
+            <input type="file" hidden onChange={
+                () => onInputFileChangeUploadFile(inputUploadFileRef, params.folderId)
+            } 
+                ref={inputUploadFileRef} />
         </>
     )
 }
