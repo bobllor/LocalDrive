@@ -694,7 +694,7 @@ func TestGetFolderBreadcrumbs(t *testing.T) {
 		assert.Nil(t, err)
 		defer res.Body.Close()
 
-		var apres ApiResponse[[]dbgateway.FileFolderInfo]
+		var apres ApiResponse[[]dbgateway.BreadcrumbFile]
 		err = json.NewDecoder(res.Body).Decode(&apres)
 		assert.Nil(t, err)
 		assert.NotNil(t, apres.Output)

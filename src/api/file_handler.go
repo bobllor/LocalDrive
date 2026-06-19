@@ -653,8 +653,7 @@ func (fh *FileHandler) GetFiles(w http.ResponseWriter, r *http.Request) {
 	fh.util.Log.Debugf("Response bytes: %d", n)
 }
 
-// GetFolderBreadcrumbs retrieves all parents of a given folder ID.
-// It will return a ResponseApi[[]FileFolderInfo] ready to use for navigation.
+// GetFolderBreadcrumbs retrieves all parents of a given folder ID for breadcrumb navigation.
 //
 // The return slice will always have the following:
 //   - The first entry will be the top level folder in the root

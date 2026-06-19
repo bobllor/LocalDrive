@@ -353,7 +353,7 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 // of the slice will always be the original folder ID and the root folder ID.
 //
 // The file type must be a type 'dir'.
-func (f *FileGateway) GetBreadcrumbs(accountId, folderId string) ([]FileFolderInfo, error) {
+func (f *FileGateway) GetBreadcrumbs(accountId, folderId string) ([]BreadcrumbFile, error) {
 	query := fmt.Sprintf(`
 		WITH RECURSIVE parent_files AS (
 			SELECT %s, %s, %s
@@ -384,7 +384,7 @@ func (f *FileGateway) GetBreadcrumbs(accountId, folderId string) ([]FileFolderIn
 		return nil, err
 	}
 
-	var files []FileFolderInfo
+	var files []BreadcrumbFile
 	err = SelectRows(rows, &files)
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to parse FileFolderInfo rows: %v", err)
