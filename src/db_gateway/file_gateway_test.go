@@ -555,6 +555,36 @@ func TestUpdateUploadStatus(t *testing.T) {
 	assert.Equal(t, string(bf.UploadStatus), string(file.UploadFailed))
 }
 
+func TestGetBreadcrumbs(t *testing.T) {
+	gw, _ := NewTestGatewayDB(t)
+
+	f1 := file.NewFile(tests.DbRowInfo.AccountID, "folder2",
+		file.FileTypeDir, "", 0, tests.DbRowInfo.ParentID, file.UploadCompleted)
+	f2 := file.NewFile(tests.DbRowInfo.AccountID, "folder3",
+		file.FileTypeDir, "", 0, f1.FileID, file.UploadCompleted)
+
+	files := []file.File{f1, f2}
+
+	err := gw.File.AddFile(files...)
+	assert.Nil(t, err)
+
+	t.Cleanup(func() {
+		for _, f := range files {
+			DropRows(gw.File.database, file.TableName, file.ColumnFileID, f.FileID)
+		}
+	})
+
+	folders, err := gw.File.GetBreadcrumbs(tests.DbRowInfo.AccountID, f2.FileID)
+	assert.Nil(t, err)
+
+	assert.Equal(t, len(folders), 3)
+
+	// root -> parent -> curr
+	assert.Equal(t, folders[2].ParentId, f1.FileID)
+	assert.Equal(t, folders[1].ParentId, f1.ParentID)
+	assert.Equal(t, folders[0].ParentId, "")
+}
+
 // getFileDb gets the [FileGateway] for the test database.
 // If an error occurs, it will return an error.
 //

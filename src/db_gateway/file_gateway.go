@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -335,6 +336,65 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 		f.deps.Log.Criticalf("Failed to retrieve (SELECT) files: %v", err)
 		return nil, SqlErr
 	}
+
+	return files, nil
+}
+
+// GetBreadcrumbs retrieves all the parent folders from a given folder ID. It will
+// perform a recursive CTE to retrieve all file types related to the given folder ID.
+// The slice will be returned in the following order:
+//   - root folder
+//   - [if existing] parents between the two
+//   - given folder ID
+//
+// Assuming the given folder ID exists, there will be a minimum one entry which is the
+// query of the original folder ID. If parents exists for the folder ID, the parent of the folder ID
+// and its parents are recursively retrieved starting from the parent. The first and final entries
+// of the slice will always be the original folder ID and the root folder ID.
+//
+// The file type must be a type 'dir'.
+func (f *FileGateway) GetBreadcrumbs(accountId, folderId string) ([]BreadcrumbFile, error) {
+	query := fmt.Sprintf(`
+		WITH RECURSIVE parent_files AS (
+			SELECT %s, %s, %s
+			FROM %s
+			WHERE %s = ? AND %s = ? AND %s = ?
+
+			UNION ALL
+
+			SELECT fc.%s, fc.%s, fc.%s
+			FROM %s fc
+			JOIN parent_files fp ON fc.%s = fp.%s
+		)
+		SELECT %s, %s, %s FROM parent_files;`,
+		file.ColumnFileID, file.ColumnParentID, file.ColumnFileName,
+		file.TableName,
+		file.ColumnFileID, file.ColumnFileOwnerID, file.ColumnFileType,
+		file.ColumnFileID, file.ColumnParentID, file.ColumnFileName,
+		file.TableName,
+		file.ColumnFileID, file.ColumnParentID,
+		file.ColumnFileID, file.ColumnParentID, file.ColumnFileName,
+	)
+
+	args := []any{folderId, accountId, file.FileTypeDir}
+
+	rows, err := f.database.Query(query, args...)
+	if err != nil {
+		f.deps.Log.Criticalf("Failed to execute query for recursive parent folders: %v | Query: %s", err, query)
+		return nil, err
+	}
+
+	var files []BreadcrumbFile
+	err = SelectRows(rows, &files)
+	if err != nil {
+		f.deps.Log.Criticalf("Failed to parse FileFolderInfo rows: %v", err)
+		return nil, err
+	}
+
+	f.deps.Log.Debugf("FileFolderInfo rows found: %d", len(files))
+
+	// reverse for breadcrumbs
+	slices.Reverse(files)
 
 	return files, nil
 }

@@ -16,7 +16,8 @@ type FileStore = {
      */
     setFiles: (parentId?: string) => Promise<void>
     /**
-     * Retrieves the files based on the parent ID.
+     * Retrieves the files based on the parent ID. If the parent ID does not exist,
+     * it will return an empty array.
      * @param parentId The parent ID of the files, this can be null indicating it is the root folder
      * @returns The array of the files related to the parentID
      */
@@ -86,11 +87,12 @@ export const useFileStore = create<FileStore>((set, get) => ({
     },
     getFiles: (parentId?: string) => {
         // TODO: log properly
-        const files = get().files;
+        const filesMap = get().files;
         const key = getParentIdUndefined(parentId);
-        console.debug(`Parent ID: ${key}`);
 
-        return files[key];
+        const files = filesMap[key] || [];
+
+        return files;
     },
     addFileResponse: async (file: FileResponse, parentId?: string) => {
         const key = getParentIdUndefined(parentId); 
@@ -111,11 +113,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
         if(res.status == "success"){
             const key = getParentIdUndefined(parentId);
-            const files = get().getFiles(parentId).map(v => v);
-
-            files.push(res.output);
-
-            set(st => ({...st, files: {...st.files, [key]: files}}));
+            get().addFileResponse(res.output, key);
         }
 
         return res.status;

@@ -21,6 +21,7 @@ import (
 const (
 	FileGetFileRootRoute            = "GET /api/storage"
 	FileGetFileParentRoute          = "GET /api/storage/folder/{parentId}"
+	FileGetFolderBreadcrumbsRoute   = "GET /api/folders/{folderId}/breadcrumbs"
 	FilePostUploadFileRoute         = "POST /api/upload"
 	FilePostUploadFileChunkRoute    = "POST /api/upload/{id}/{chunkIndex}"
 	FilePostUploadFileCompleteRoute = "POST /api/upload/{id}/complete"
@@ -650,6 +651,46 @@ func (fh *FileHandler) GetFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fh.util.Log.Debugf("Response bytes: %d", n)
+}
+
+// GetFolderBreadcrumbs retrieves all parents of a given folder ID for breadcrumb navigation.
+//
+// The return slice will always have the following:
+//   - The first entry will be the top level folder in the root
+//   - The last entry will be the given folder ID
+//
+// Other entries will exist depending on the nesting level.
+// Invalid IDs or an empty slice is considered a bad request.
+//
+// This requires auth.
+func (fh *FileHandler) GetFolderBreadcrumbs(w http.ResponseWriter, r *http.Request) {
+	usercontext, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
+	if !ok {
+		fh.util.HttpWriteUnauthorizedError(w, r)
+		return
+	}
+	folderId := r.PathValue("folderId")
+	if folderId == "" {
+		fh.util.HttpWriteCustomBadDataError(w, "No folder ID given.", ReasonBadRequestData, "No folder ID given")
+		return
+	}
+
+	folders, err := fh.gateway.File.GetBreadcrumbs(usercontext.AccountId, folderId)
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "Failed to retrieve folders: %v", err)
+		return
+	}
+	if len(folders) == 0 {
+		fh.util.HttpWriteCustomBadDataErrorf(w, "File not found.", ReasonBadRequestData, "No folders found for ID %s", folderId)
+		return
+	}
+
+	n, err := WriteResponse(w, NewApiResponse(folders))
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "Failed to write resposne: %v", err)
+	}
+
+	fh.util.Log.Debugf("Wrote %d bytes to response with folders", n)
 }
 
 // mkAccountDir creates the directory of the account ID in the storage folder.
