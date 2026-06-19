@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -339,23 +340,20 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 	return files, nil
 }
 
-// GetFolderIdParents retrieves all the parent folders from a given folder ID. It will
+// GetBreadcrumbs retrieves all the parent folders from a given folder ID. It will
 // perform a recursive CTE to retrieve all file types related to the given folder ID.
 // The slice will be returned in the following order:
-//   - Given folder ID data
-//   - Parent of folder ID
-//   - [if existing] parent of parent ...
-//   - ... root folder
+//   - root folder
+//   - [if existing] parents between the two
+//   - given folder ID
 //
 // Assuming the given folder ID exists, there will be a minimum one entry which is the
 // query of the original folder ID. If parents exists for the folder ID, the parent of the folder ID
 // and its parents are recursively retrieved starting from the parent. The first and final entries
 // of the slice will always be the original folder ID and the root folder ID.
 //
-// If the folder ID does not exist, then it will return an empty slice.
-//
 // The file type must be a type 'dir'.
-func (f *FileGateway) GetFolderIdParents(accountId, folderId string) ([]FileFolderInfo, error) {
+func (f *FileGateway) GetBreadcrumbs(accountId, folderId string) ([]FileFolderInfo, error) {
 	query := fmt.Sprintf(`
 		WITH RECURSIVE parent_files AS (
 			SELECT %s, %s, %s
@@ -394,6 +392,9 @@ func (f *FileGateway) GetFolderIdParents(accountId, folderId string) ([]FileFold
 	}
 
 	f.deps.Log.Debugf("FileFolderInfo rows found: %d", len(files))
+
+	// reverse for breadcrumbs
+	slices.Reverse(files)
 
 	return files, nil
 }

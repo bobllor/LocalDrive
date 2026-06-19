@@ -555,7 +555,7 @@ func TestUpdateUploadStatus(t *testing.T) {
 	assert.Equal(t, string(bf.UploadStatus), string(file.UploadFailed))
 }
 
-func TestGetAllParents(t *testing.T) {
+func TestGetBreadcrumbs(t *testing.T) {
 	gw, _ := NewTestGatewayDB(t)
 
 	f1 := file.NewFile(tests.DbRowInfo.AccountID, "folder2",
@@ -574,16 +574,15 @@ func TestGetAllParents(t *testing.T) {
 		}
 	})
 
-	folders, err := gw.File.GetFolderIdParents(tests.DbRowInfo.AccountID, f2.FileID)
+	folders, err := gw.File.GetBreadcrumbs(tests.DbRowInfo.AccountID, f2.FileID)
 	assert.Nil(t, err)
 
 	assert.Equal(t, len(folders), 3)
 
-	// current location -> its parent -> its parent
-	// curr (f2) is in parent (f1) which is in root (parent)
-	assert.Equal(t, folders[0].ParentId, f1.FileID)
+	// root -> parent -> curr
+	assert.Equal(t, folders[2].ParentId, f1.FileID)
 	assert.Equal(t, folders[1].ParentId, f1.ParentID)
-	assert.Equal(t, folders[2].ParentId, "")
+	assert.Equal(t, folders[0].ParentId, "")
 }
 
 // getFileDb gets the [FileGateway] for the test database.
