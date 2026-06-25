@@ -431,13 +431,11 @@ func TestRenameDuplicateFiles(t *testing.T) {
 			err := gw.File.AddFile(c.f)
 			assert.Nil(t, err)
 
-			err = gw.File.RenameFile(tests.DbRowInfo.AccountID, c.f.FileID, c.newFileName)
+			fi, err := gw.File.RenameFile(tests.DbRowInfo.AccountID, c.f.FileID, c.newFileName)
 			if c.isErr {
 				assert.NotNil(t, err)
 				assert.True(t, IsDuplicateSqlError(err))
 			} else {
-				assert.Nil(t, err)
-				fi, err := gw.File.GetFile(c.f.OwnerID, c.f.FileID)
 				assert.Nil(t, err)
 				assert.NotNil(t, fi)
 				assert.Equal(t, fi.Name, c.newFileName)
@@ -515,17 +513,12 @@ func TestRenameFileName(t *testing.T) {
 	})
 
 	// confirming the hash is changed
-	err = fg.RenameFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID, newFileName)
+	fi, err := fg.RenameFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID, newFileName)
 	assert.Nil(t, err)
-	fi, err := fg.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
-	assert.Nil(t, err)
-
 	assert.NotEqual(t, fi.UniqueHash, tests.DbRowInfo.UniqueHash)
 
 	// confirming the hash is back to its default value
-	err = fg.RenameFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID, tests.DbRowInfo.FileName)
-	assert.Nil(t, err)
-	fi, err = fg.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
+	fi, err = fg.RenameFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID, tests.DbRowInfo.FileName)
 	assert.Nil(t, err)
 	assert.NotNil(t, fi)
 

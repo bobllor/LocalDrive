@@ -192,7 +192,9 @@ func (f *FileGateway) AddFile(files ...file.File) error {
 // The unique hash will be regenerated due to the name change. A duplication error can
 // occur if the file is the 'file' type and it exists with the same parent ID.
 // This will also update the modified date time to current time.
-func (f *FileGateway) RenameFile(accountId, fileId, newFileName string) error {
+//
+// It will return back the new File.
+func (f *FileGateway) RenameFile(accountId, fileId, newFileName string) (*file.File, error) {
 	q := fmt.Sprintf(`
 		UPDATE %s
 		SET %s = ?,
@@ -211,16 +213,26 @@ func (f *FileGateway) RenameFile(accountId, fileId, newFileName string) error {
 	res, err := execQuery(f.database, q, args...)
 	if IsDuplicateSqlError(err) {
 		f.deps.Log.Warnf("Duplicate file rename for %s (-> %s)", fileId, newFileName)
-		return err
+		return nil, err
 	}
 	if err != nil {
-		return logQueryError(f.deps.Log, err, q)
+		return nil, logQueryError(f.deps.Log, err, q)
 	}
 
 	f.deps.Log.Infof("Renamed file to %s (id=%s)", newFileName, fileId)
 	logResultRows(f.deps.Log, res)
 
-	return nil
+	fi, err := f.GetFile(accountId, fileId)
+	if err != nil {
+		f.deps.Log.Criticalf("Failed to retrieve file during file rename: %v", err)
+		return nil, err
+	}
+	if fi == nil {
+		f.deps.Log.Critical("File retrieval is empty")
+		return nil, errors.New("failed to retrieve file")
+	}
+
+	return fi, nil
 }
 
 // UpdateModifiedFiles updates the modified date column to the current time.
