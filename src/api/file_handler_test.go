@@ -19,6 +19,7 @@ import (
 	dbgateway "github.com/bobllor/cloud-project/src/db_gateway"
 	"github.com/bobllor/cloud-project/src/file"
 	"github.com/bobllor/cloud-project/src/tests"
+	"github.com/bobllor/cloud-project/src/utils"
 )
 
 func TestGetFilesByAccountAndParent(t *testing.T) {
@@ -715,6 +716,133 @@ func TestGetFolderBreadcrumbs(t *testing.T) {
 	})
 }
 
+func TestRenameFile(t *testing.T) {
+	gw, db := dbgateway.NewTestGatewayDB(t)
+	serv := newTestServer(gw)
+	defer serv.Close()
+
+	tc := serv.Client()
+	url := serv.URL + "/api/file/rename"
+
+	type testCases struct {
+		File            file.File
+		NewName         string
+		TestName        string
+		OverwriteFileId string
+		NilReqBody      bool
+		IsErr           bool
+		ErrReasonCode   ReasonCode
+		StatusCode      int
+	}
+
+	cases := []testCases{
+		{
+			File: file.NewFile(
+				tests.DbRowInfo.AccountID, "example1", file.FileTypeFile,
+				".txt", 0, "", file.UploadCompleted,
+			),
+			NewName:  "new name 1",
+			TestName: "Normal run",
+			IsErr:    false,
+		},
+		{
+			File: file.NewFile(
+				tests.DbRowInfo.AccountID, "example2", file.FileTypeFile,
+				".txt", 0, "", file.UploadCompleted,
+			),
+			NewName:       tests.DbRowInfo.FileName,
+			TestName:      "Duplicate error",
+			IsErr:         true,
+			ErrReasonCode: ReasonDuplicateData,
+			StatusCode:    http.StatusBadRequest,
+		},
+		{
+			File: file.NewFile(
+				tests.DbRowInfo.AccountID, "example3", file.FileTypeFile,
+				".txt", 0, "", file.UploadCompleted,
+			),
+			NewName:       "",
+			TestName:      "Invalid request body: empty name",
+			IsErr:         true,
+			ErrReasonCode: ReasonBadRequestData,
+			StatusCode:    http.StatusBadRequest,
+		},
+		{
+			File: file.NewFile(
+				tests.DbRowInfo.AccountID, "example4", file.FileTypeFile,
+				".txt", 0, "", file.UploadCompleted,
+			),
+			NewName:         "file name",
+			TestName:        "Invalid request body: invalid file ID",
+			IsErr:           true,
+			OverwriteFileId: "asdfdsa-12312",
+			ErrReasonCode:   ReasonBadRequestData,
+			StatusCode:      http.StatusBadRequest,
+		},
+		{
+			File: file.NewFile(
+				tests.DbRowInfo.AccountID, "example4", file.FileTypeFile,
+				".txt", 0, "", file.UploadCompleted,
+			),
+			NewName:       "file name",
+			TestName:      "Empty request body",
+			NilReqBody:    true,
+			IsErr:         true,
+			ErrReasonCode: ReasonBadRequestData,
+			StatusCode:    http.StatusBadRequest,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.TestName, func(t *testing.T) {
+			err := gw.File.AddFile(c.File)
+			assert.Nil(t, err)
+
+			t.Cleanup(func() {
+				dbgateway.DropRows(db, file.TableName, file.ColumnFileID, c.File.FileID)
+			})
+
+			body := RequestRenameFile{FileId: c.File.FileID, NewFileName: c.NewName}
+			if c.OverwriteFileId != "" {
+				body.FileId = c.OverwriteFileId
+			}
+
+			reqBody, err := tests.NewRequestBody(body)
+			assert.Nil(t, err)
+
+			if c.NilReqBody {
+				reqBody = nil
+			}
+
+			req, err := tests.NewRequest("PATCH", url, reqBody)
+			assert.Nil(t, err)
+
+			req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+			res, err := tc.Do(req)
+			assert.Nil(t, err)
+			defer res.Body.Close()
+
+			resp, err := utils.Decode[ApiResponse[file.FileResponse]](res.Body)
+			assert.Nil(t, err)
+			if !c.IsErr {
+				assert.Nil(t, resp.Error)
+
+				// name checks
+				fires := resp.Output
+				assert.Equal(t, fires.Name, c.NewName)
+				fi, err := gw.File.GetFile(tests.DbRowInfo.AccountID, c.File.FileID)
+				assert.Nil(t, err)
+				assert.Equal(t, fi.Name, c.NewName)
+			} else {
+				assert.NotNil(t, resp.Error)
+				assert.Equal(t, resp.Error.Reason, c.ErrReasonCode)
+				assert.Equal(t, resp.Error.Code, c.StatusCode)
+			}
+		})
+	}
+}
+
 // newTestServer creates a new test HTTP server with all the
 // default routes and functions from the File handler. It will automatically
 // wrap handlers in middleware.
@@ -732,6 +860,7 @@ func newTestServer(gw *dbgateway.Gateway) *httptest.Server {
 	mux.Handle(FilePostDownloadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.DownloadFile))
 	mux.Handle(FilePostAddFolderRoute, ap.CreateAuthMiddleware(ap.FileHandler.PostAddFolder))
 	mux.Handle(FileGetFolderBreadcrumbsRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFolderBreadcrumbs))
+	mux.Handle(FilePatchRenameFile, ap.CreateAuthMiddleware(ap.FileHandler.RenameFile))
 
 	serv := httptest.NewServer(mux)
 

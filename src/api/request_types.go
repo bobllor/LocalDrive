@@ -29,3 +29,9 @@ type RequestAddFolderInfo struct {
 	Name     string `json:"fileName"`
 	ParentId string `json:"parentId"`
 }
+
+// RequestRenameFile is the request body to rename a file.
+type RequestRenameFile struct {
+	FileId      string `json:"fileId"`
+	NewFileName string `json:"newFileName"`
+}
