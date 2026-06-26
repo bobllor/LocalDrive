@@ -28,6 +28,7 @@ const (
 	FilePostDownloadFileRoute       = "GET /api/download/file/{fileId}"
 	FilePostAddFolderRoute          = "POST /api/folders/add"
 	FilePatchUpdateFileStatus       = "PATCH /api/upload/{id}/fail"
+	FilePatchRenameFile             = "PATCH /api/file/rename"
 )
 
 const CHUNKS_DIR_NAME = "lcschunks"
@@ -691,6 +692,83 @@ func (fh *FileHandler) GetFolderBreadcrumbs(w http.ResponseWriter, r *http.Reque
 	}
 
 	fh.util.Log.Debugf("Wrote %d bytes to response with folders", n)
+}
+
+// RenameFile renames a file via a PATCH request. Upon a successful name change, it will return back
+// the file response with the updated name in the response.
+//
+// It will recalculate the hash during the renaming attempt. If the rename failed the uniqueness check,
+// then it will return a 400 bad request.
+//
+// Folders are exempt from the uniqueness check and can have duplicate names.
+//
+// This requires auth.
+func (fh *FileHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
+	context, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
+	if !ok {
+		fh.util.HttpWriteUnauthorizedError(w, r)
+		return
+	}
+
+	var body *RequestRenameFile
+	defer r.Body.Close()
+
+	err := json.NewDecoder(r.Body).Decode(&body)
+	if errors.Is(err, io.EOF) {
+		fh.util.HttpWriteCustomBadDataError(
+			w,
+			"No body was given with the request",
+			ReasonBadRequestData,
+			"Empty request body given",
+		)
+		return
+	}
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "Failed to decode rename file body: %v", err)
+		return
+	}
+
+	if strings.TrimSpace(body.NewFileName) == "" {
+		fh.util.HttpWriteCustomBadDataError(
+			w,
+			"File name cannot be empty",
+			ReasonBadRequestData,
+			"Given file name is empty",
+		)
+		return
+	}
+	if uuid.Validate(body.FileId) != nil {
+		fh.util.HttpWriteCustomBadDataErrorf(
+			w,
+			"File ID is invalid",
+			ReasonBadRequestData,
+			"Invalid file ID given: %s", body.FileId,
+		)
+		return
+	}
+
+	fi, err := fh.gateway.File.RenameFile(context.AccountId, body.FileId, body.NewFileName)
+	if err != nil {
+		if dbgateway.IsDuplicateSqlError(err) {
+			fh.util.HttpWriteCustomBadDataErrorf(
+				w,
+				fmt.Sprintf("File name %s already exists", body.NewFileName),
+				ReasonDuplicateData,
+				"Failed to rename file, new file name %s already exists (id=%s)", body.NewFileName, body.FileId,
+			)
+		} else {
+			fh.util.HttpWriteInternalError(w, "Failed to rename file: %v | file_id=%s,file_name=%s", err, body.FileId, body.NewFileName)
+		}
+		return
+	}
+
+	n, err := WriteResponse(w, NewApiResponse(fi.ToFileResponse()))
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "Failed to write rename file response: %v", err)
+		return
+	}
+
+	fh.util.Log.Debugf("Wrote %d bytes to response for rename file", n)
 }
 
 // mkAccountDir creates the directory of the account ID in the storage folder.

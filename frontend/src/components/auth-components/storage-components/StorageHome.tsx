@@ -3,12 +3,15 @@ import { useNavigate, useParams } from "react-router";
 import { fetchApi } from "../../../functions/fetchtils";
 import { useFileStore, type FileResponse } from "../../../context/FileStore";
 import FileListDisplay from "./FileListDisplay";
-import FileOpButton, { type FileOperation } from "./file-ops-components/FileOpButton";
+import FileOpButton from "./file-ops-components/FileOpButton";
 import BackgroundBlur from "../../ui/BackgroundBlur";
 import AddFolderOp from "./file-ops-components/AddFolderOp";
 import ModalBase from "../../ui/ModalBase";
 import { FileUploader } from "./file-ops-components/file-uploader";
 import Breadcrumbs from "./ui/Breadcrumbs";
+import RenameFile from "../modal-components/RenameFile";
+
+export type ModalOperation = "" | "addFolder" | "renameFile";
 
 export default function StorageHome(): JSX.Element{
     /**
@@ -35,7 +38,10 @@ export default function StorageHome(): JSX.Element{
     const files = useFileDisplay();
 
     const [showBlur, setShowBlur] = useState(false);
-    const [fileOp, setFileOp] = useState<FileOperation>("");
+    const [modalOp, setModalOp] = useState<ModalOperation>("");
+    // prop drill, used to extract file IDs from children and use them in other
+    // components
+    const [fileId, setFileId] = useState("");
 
     const inputUploadFileRef = useRef<HTMLInputElement | null>(null);
     const params = useParams();
@@ -47,22 +53,23 @@ export default function StorageHome(): JSX.Element{
 
     return (
         <>
-            {showBlur && fileOp != "" &&
+            {showBlur && modalOp != "" &&
                 <BackgroundBlur setBlur={setShowBlur}>
                     <ModalBase>
-                        {fileOp == "addFolder" && <AddFolderOp onClose={onClose} />}
+                        {modalOp == "addFolder" && <AddFolderOp onClose={onClose} />}
+                        {modalOp == "renameFile" && <RenameFile onClose={onClose} fileId={fileId} />}
                     </ModalBase>
                 </BackgroundBlur>
             }
             <div className="flex flex-col justify-center items-center gap-1 w-full">
-                <FileOpButton setBlur={setShowBlur} setFileOp={setFileOp} fileUploadRef={inputUploadFileRef} />
+                <FileOpButton setBlur={setShowBlur} setModalOp={setModalOp} fileUploadRef={inputUploadFileRef} />
                 <button onClick={logout} className="border w-fit h-fit py-2 px-4">
                     Logout
                 </button>
                 <Breadcrumbs />
                 <div className="w-full border">
                     <Suspense fallback={<div>Temporary: Loading...</div>}>
-                        <FileListDisplay files={files} />
+                        <FileListDisplay files={files} setBlur={setShowBlur} setModalOp={setModalOp} setFileId={setFileId} />
                     </Suspense>
                 </div>
             </div> 
