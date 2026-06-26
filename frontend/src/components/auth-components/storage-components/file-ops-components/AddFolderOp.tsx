@@ -1,6 +1,5 @@
 import { useEffect, useRef, type JSX } from "react";
 import type { SetBlurFunc } from "../../../ui/BackgroundBlur";
-import ModalBase from "../../../ui/ModalBase";
 import type React from "react";
 import { useParams } from "react-router";
 import { useFileStore } from "../../../../context/FileStore";
@@ -26,6 +25,8 @@ export default function AddFolderOp({onClose}: AddFolderOpProps): JSX.Element{
             const data = new FormData(e.currentTarget);
             const folderValue = data.get(INPUT_NAME) as string;
 
+            // due to the await, this is used just in case.
+            onClose(false);
             const status = await addFolder(folderValue, params.folderId);
 
             console.log(status);
@@ -35,25 +36,21 @@ export default function AddFolderOp({onClose}: AddFolderOpProps): JSX.Element{
     }
 
     return (
-        <ModalBase>
-            <div>
-                <form
-                className="flex flex-col justify-between items-center gap-3"
-                onSubmit={onFormSubmit}>
-                    <input 
-                    ref={inputRef}
-                    type="text" className="border" name={INPUT_NAME} autoComplete="off" defaultValue={"New folder"} />
-                    <div className="flex justify-center items-center gap-6">
-                        <button 
-                        className={BUTTON_CLASS}
-                        type="button" onClick={() => onClose(false)}>Cancel</button>
-                        <button 
-                        className={BUTTON_CLASS}
-                        type="submit">Create</button>
-                    </div>
-                </form>
+        <form
+        className="flex flex-col justify-between items-center gap-3"
+        onSubmit={onFormSubmit}>
+            <input 
+            ref={inputRef}
+            type="text" className="border" name={INPUT_NAME} autoComplete="off" defaultValue={"New folder"} />
+            <div className="flex justify-center items-center gap-6">
+                <button 
+                className={BUTTON_CLASS}
+                type="button" onClick={() => onClose(false)}>Cancel</button>
+                <button 
+                className={BUTTON_CLASS}
+                type="submit">Create</button>
             </div>
-        </ModalBase>
+        </form>
     )
 }
 
