@@ -1,30 +1,29 @@
 import React, { useEffect, useRef, useState, type JSX } from "react";
 import type { SetBlurFunc } from "../../../ui/BackgroundBlur";
+import type { ModalOperation } from "../StorageHome";
 
 type FileOpButtonProps = {
     setBlur: SetBlurFunc
-    setFileOp: (t: FileOperation) => void
+    setModalOp: (t: ModalOperation) => void
     fileUploadRef: React.RefObject<HTMLInputElement | null>
 }
 
 type MenuButton = {
     text: string
-    onClickFunc: (op: FileOperation) => void,
-    operation: FileOperation,
+    onClickFunc: (op: ModalOperation) => void,
+    operation: ModalOperation,
     id: string,
 }
-
-export type FileOperation = "" | "addFolder";
 
 /**
  * Used to open the context menu to perform different file operations.
  * @returns The button for file operations
  */
-export default function FileOpButton({setBlur, setFileOp, fileUploadRef}: FileOpButtonProps): JSX.Element{
+export default function FileOpButton({setBlur, setModalOp, fileUploadRef}: FileOpButtonProps): JSX.Element{
     const [revealMenu, setRevealMenu] = useState(false);
     const menuDivRef = useRef(null);
 
-    const onDefaultClickOp = (op: FileOperation) => setFileOp(op);
+    const onDefaultClickOp = (op: ModalOperation) => setModalOp(op);
     
     const MENU_BUTTONS: Array<MenuButton> = [
         {
@@ -35,8 +34,8 @@ export default function FileOpButton({setBlur, setFileOp, fileUploadRef}: FileOp
         },
         {
             text: "New upload",
-            onClickFunc: (op: FileOperation) => {
-                setFileOp(op);
+            onClickFunc: (op: ModalOperation) => {
+                setModalOp(op);
                 if(!fileUploadRef.current){
                     return;
                 }
@@ -59,7 +58,7 @@ export default function FileOpButton({setBlur, setFileOp, fileUploadRef}: FileOp
      * 
      * @param f 
      */
-    const hideMenuWrapper = (f: MenuButton["onClickFunc"], op: FileOperation) => {
+    const hideMenuWrapper = (f: MenuButton["onClickFunc"], op: ModalOperation) => {
         try{
             f(op);
         }finally{

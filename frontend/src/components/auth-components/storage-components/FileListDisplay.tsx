@@ -5,18 +5,27 @@ import React from "react";
 import { useFileListStore } from "./store/FileListStore";
 import { useShallow } from "zustand/shallow";
 import { createUrl } from "../../../server-utils";
+import type { SetBlurFunc } from "../../ui/BackgroundBlur";
+import type { ModalOperation } from "./StorageHome";
 
 type TableHeadObj = {
-    text: string,
+    text: string
 }
 
 type FileListDisplayProps = {
-    files?: Array<FileResponse>,
+    files?: Array<FileResponse>
+    setBlur: SetBlurFunc
+    setModalOp: (op: ModalOperation) => void
+    setFileId: (s: string) => void
 }
 
 type FileObjProps = {
-    fileObj: FileResponse,
+    fileObj: FileResponse
+    setBlur: SetBlurFunc
+    setModalOp: (op: ModalOperation) => void
+    setFileId: (s: string) => void
 }
+
 
 const THEAD_ELEMENTS: Array<TableHeadObj> = [
     {
@@ -32,7 +41,7 @@ const THEAD_ELEMENTS: Array<TableHeadObj> = [
 
 const hoverCss = "hover:bg-gray-400/45";
 
-export default function FileListDisplay({files}: FileListDisplayProps): JSX.Element{
+export default function FileListDisplay({files, setBlur, setModalOp, setFileId}: FileListDisplayProps): JSX.Element{
     const clearFileIds = useFileListStore(state => state.clearFileIds);
 
     // files in progress will not be updated
@@ -59,7 +68,7 @@ export default function FileListDisplay({files}: FileListDisplayProps): JSX.Elem
                 {
                     filesMap.map(fileObj => (
                         <React.Fragment key={fileObj.fileID}>
-                            <FileTableRow fileObj={fileObj} />
+                            <FileTableRow fileObj={fileObj} setModalOp={setModalOp} setBlur={setBlur} setFileId={setFileId} />
                         </React.Fragment>
                     ))
                 }
@@ -71,7 +80,7 @@ export default function FileListDisplay({files}: FileListDisplayProps): JSX.Elem
 /**
  * Component that handles the table data for the object.
  */
-function FileTableRow({fileObj}: FileObjProps): JSX.Element{
+function FileTableRow({fileObj, setBlur, setModalOp, setFileId}: FileObjProps): JSX.Element{
     const {selectedFileIds, addFileId, clearFileIds} = useFileListStore(useShallow(state => ({
         selectedFileIds: state.selectedFileIds,
         addFileId: state.addFileId,
@@ -93,16 +102,24 @@ function FileTableRow({fileObj}: FileObjProps): JSX.Element{
             }
         }}
         className={`select-none ${selectedFileIds.has(fileObj.fileID) ? "bg-blue-400/60 hover:bg-blue-400/80" : hoverCss}`}>
-            <FileTableData fileObj={fileObj} />
+            <FileTableData fileObj={fileObj} setBlur={setBlur} setModalOp={setModalOp} setFileId={setFileId} />
         </tr>
     )
 }
 
+const BUTTON_CSS = "hover:bg-gray-500 rounded-2xl px-1.5 flex justify-center items-center"
+
 /**
  * Component that represents any non-directory file table data.
  */
-function FileTableData({fileObj}: FileObjProps): JSX.Element{
+function FileTableData({fileObj, setBlur, setModalOp, setFileId}: FileObjProps): JSX.Element{
     const cssClass = "";
+
+    const renameOnClick = (fileId: string) => {
+        setModalOp("renameFile");
+        setBlur(true);
+        setFileId(fileId);
+    }
 
     return (
         <>
@@ -112,15 +129,20 @@ function FileTableData({fileObj}: FileObjProps): JSX.Element{
             <td className={cssClass}>
                 {fileObj.fileType != "dir" ? fileObj.fileSize : "-"}
             </td>
-            <td className={cssClass}>
+            <td className={"flex"}>
                 {
                     fileObj.fileType != "dir" &&
                     <span
-                    className="hover:bg-gray-500 rounded-2xl px-1.5 flex justify-center items-center"
+                    className={BUTTON_CSS}
                     onClick={() => downloadFile(fileObj.fileID)}>
                         D
                     </span>
                 }
+                <button
+                onClick={() => renameOnClick(fileObj.fileID)}
+                className={BUTTON_CSS}>
+                    R
+                </button>
             </td>
         </>
     )
