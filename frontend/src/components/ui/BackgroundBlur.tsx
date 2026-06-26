@@ -31,6 +31,7 @@ export default function BackgroundBlur({children, setBlur}: BackgroundBlurProps)
         </div>
     )
 }
+
 /**
  * A hook used to add listeners to disable the background blur.
  */
