@@ -75,6 +75,42 @@ func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, erro
 	return files, nil
 }
 
+// GetDeletedFiles retrieves all files that are marked for deletion, or if the
+// deleted column date is not null.
+func (f *FileGateway) GetDeletedFiles(fileOwnerID string) ([]file.FileResponse, error) {
+	query, args, err := sqlquery.Select(
+		file.TableName,
+		file.ColumnFileName, file.ColumnFileType,
+		file.ColumnFileID, file.ColumnFileExtension,
+		file.ColumnParentID, file.ColumnFileSize,
+		file.ColumnModifiedOn, file.ColumnDeletedOn,
+		file.ColumnUploadStatus,
+	).Where().Equal(file.ColumnFileOwnerID, fileOwnerID).And().Is(
+		file.ColumnDeletedOn, "NOT NULL",
+	).Build()
+	if err != nil {
+		return nil, logSqlBuildError(f.deps.Log, err, query, args)
+	}
+
+	// due to the way IS works the last arg must be dropped
+	// TODO: fix this bruh!
+	args = args[:len(args)-1]
+
+	rows, err := f.database.Query(query, args...)
+	if err != nil {
+		return nil, logQueryError(f.deps.Log, err, query)
+	}
+
+	var files []file.FileResponse
+	err = SelectRows(rows, &files)
+	if err != nil {
+		f.deps.Log.Criticalf("Failed to select rows from query: %v", err)
+		return nil, SqlErr
+	}
+
+	return files, nil
+}
+
 // GetFile retrieves a single file based on the given file ID. It will return the
 // full File metadata.
 //
@@ -255,9 +291,11 @@ func (f *FileGateway) UpdateModifiedFiles(fileOwnerID string, fileIDs ...string)
 	return nil
 }
 
-// DeleteFile sets a slice of file IDs to be marked for deletion.
+// DeleteFiles sets a slice of file IDs for deletion.
+// It will set the file IDs for deletion by setting the date 15 days from the current
+// date.
 //
-// This does not delete the files immediately but marks the deletion date 15 days from today.
+// This method does not delete files from the database immediately.
 func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs ...string) error {
 	if len(fileIDs) == 0 {
 		f.deps.Log.Critical("Failed to delete files, got file IDs length 0")

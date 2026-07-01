@@ -578,6 +578,15 @@ func TestGetBreadcrumbs(t *testing.T) {
 	assert.Equal(t, folders[0].ParentId, "")
 }
 
+func TestGetDeletedFiles(t *testing.T) {
+	fg, err := getTestFileGateway()
+	assert.Nil(t, err)
+
+	// TODO: finish this later
+	_, err = fg.GetDeletedFiles(tests.DbRowInfo.AccountID)
+	assert.Nil(t, err)
+}
+
 // getFileDb gets the [FileGateway] for the test database.
 // If an error occurs, it will return an error.
 //
