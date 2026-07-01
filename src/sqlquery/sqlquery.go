@@ -26,6 +26,7 @@ const (
 	OperatorLike    ComparisonOperator = "LIKE"
 	OperatorIn      ComparisonOperator = "IN"
 	OperatorExists  ComparisonOperator = "EXISTS"
+	OperatorIs      ComparisonOperator = "IS"
 )
 
 type LogicalOperator string

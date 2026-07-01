@@ -67,6 +67,13 @@ func (c *ConditionNode) buildQuery() string {
 		// special case, the subquery is considered the column
 		// args are not used here, args is added in the WhereClause
 		query = fmt.Sprintf("EXISTS (%s)", c.column)
+	case OperatorIs:
+		// this has at most 0 arguments
+		query = fmt.Sprintf("%s IS %v", c.column, c.args[0])
+	default:
+		// default case, this will fail a query normally which can be caught if
+		// we dont have a proper case (or if its wrong).
+		query = fmt.Sprintf("%s %s %s", c.column, string(c.operator), params)
 	}
 
 	return query

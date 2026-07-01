@@ -61,6 +61,13 @@ func (c *ConditionClause) Equal(column string, arg any) *ConditionClause {
 	return c
 }
 
+// Is creates a new "IS" condition. Example: `Column IS NOT NULL`.
+func (c *ConditionClause) Is(column string, arg string) *ConditionClause {
+	c.addNewNode(column, OperatorIs, arg)
+
+	return c
+}
+
 // In creates a new "in (list)" condition. Example: `Column IN (val1, val2...)`.
 func (c *ConditionClause) In(column string, args ...any) *ConditionClause {
 	c.addNewNode(column, OperatorIn, args...)
