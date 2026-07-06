@@ -42,22 +42,28 @@ type FileGateway struct {
 }
 
 // GetAllFiles returns a FileResponse slice of all File rows belonging to the file owner.
+// It will automatically be sorted in ascending order with dir > file and in alphabetical
+// order.
 //
 // If an error occurs then it will return an error, and abort
 // the scanning process if it is occurring.
 func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, error) {
-	query, args, err := sqlquery.Select(
-		file.TableName,
+	query := fmt.Sprintf(
+		`SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+		FROM %s
+		WHERE %s = ?
+		ORDER BY %s, %s`,
 		file.ColumnFileName, file.ColumnFileType,
 		file.ColumnFileID, file.ColumnFileExtension,
 		file.ColumnParentID, file.ColumnFileSize,
 		file.ColumnModifiedOn, file.ColumnDeletedOn,
-		file.ColumnUploadStatus,
-	).Where().Equal(file.ColumnFileOwnerID, fileOwnerID).Build()
-	if err != nil {
-		f.deps.Log.Criticalf("Failed to build query: %v | Query: %s | Args: %d", err, query, len(args))
-		return nil, SqlErr
-	}
+		file.ColumnUploadStatus, file.ColumnUniqueHash,
+		file.TableName,
+		file.ColumnFileOwnerID,
+		file.ColumnFileType, file.ColumnFileName,
+	)
+
+	args := []any{fileOwnerID}
 
 	rows, err := f.database.Query(query, args...)
 	if err != nil {
@@ -84,7 +90,7 @@ func (f *FileGateway) GetDeletedFiles(fileOwnerID string) ([]file.FileResponse, 
 		file.ColumnFileID, file.ColumnFileExtension,
 		file.ColumnParentID, file.ColumnFileSize,
 		file.ColumnModifiedOn, file.ColumnDeletedOn,
-		file.ColumnUploadStatus,
+		file.ColumnUploadStatus, file.ColumnUniqueHash,
 	).Where().Equal(file.ColumnFileOwnerID, fileOwnerID).And().Is(
 		file.ColumnDeletedOn, "NOT NULL",
 	).Build()
