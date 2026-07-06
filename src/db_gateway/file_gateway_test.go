@@ -102,6 +102,39 @@ func TestAddFile(t *testing.T) {
 	})
 }
 
+func TestGetFilesSorting(t *testing.T) {
+	gw, err := getTestFileGateway()
+	assert.Nil(t, err)
+
+	fi := file.NewFile(
+		tests.DbRowInfo.AccountID,
+		"sort filename test",
+		file.FileTypeFile,
+		".txt",
+		0,
+		"",
+		file.UploadPending,
+	)
+
+	t.Cleanup(func() {
+		DropRows(gw.database, file.TableName, file.ColumnFileID, fi.FileID)
+	})
+
+	err = gw.AddFile(fi)
+	assert.Nil(t, err)
+
+	files, err := gw.GetAllFiles(tests.DbRowInfo.AccountID)
+	assert.Nil(t, err)
+
+	// total of four files
+	assert.Equal(t, len(files), 4)
+
+	assert.Equal(t, files[0].Type, file.FileTypeDir)
+	assert.Equal(t, files[1].UniqueHash, fi.UniqueHash)
+	// fi > test1 > test2
+	assert.Equal(t, files[2].UniqueHash, tests.DbRowInfo.UniqueHash)
+}
+
 func TestAddFileDuplicate(t *testing.T) {
 	gw, db := NewTestGatewayDB(t)
 
