@@ -66,6 +66,7 @@ export type FileResponse = {
     modifiedOn: Date
     deletedOn?: Date
     uploadStatus: UploadStatus
+    uniqueHash: string
 }
 
 export const useFileStore = create<FileStore>((set, get) => ({
