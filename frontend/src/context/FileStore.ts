@@ -36,7 +36,8 @@ type FileStore = {
      */
     addFolder: (folderName: string, parentId?: string) => Promise<ResponseStatus>,
     /**
-     * Adds a new FileResponse to the store.
+     * Adds a new FileResponse to the store. Upon adding a file, it will be
+     * sorted based on the sort criteria.
      * @returns 
      */
     addFileResponse: (file: FileResponse, parentId?: string) => Promise<void>,
@@ -52,13 +53,14 @@ type FileStore = {
 }
 
 type UploadStatus = "completed" | "failed" | "pending";
+type FileType = "dir" | "file";
 
 /**
  * The type representing the File data of the database.
  */
 export type FileResponse = {
     fileName: string
-    fileType: string
+    fileType: FileType
     fileID: string
     extension: string
     parentID: string
@@ -78,8 +80,6 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
         // will not update the state if it already exists
         if(key in baseFiles){
-            // TODO: REMOVE IN PROD
-            console.log("Key already exists, skipping content");
             return;
         }
 
@@ -90,8 +90,6 @@ export const useFileStore = create<FileStore>((set, get) => ({
             newObj[key] = newFiles.output;
 
             set(state => ({...state, files: {...state.files, ...newObj}}));
-            // TODO: remove this or something idk
-            console.debug(`New file store size: ${Object.keys(get().files).length}`);
         }catch(e){
             throw e;
         }
@@ -110,6 +108,14 @@ export const useFileStore = create<FileStore>((set, get) => ({
         
         const files = get().getFiles(parentId).map(v => v);
         files.push(file);
+
+        files.sort((a, b) => {
+            if(a.fileType !== b.fileType){
+                return a.fileType === "dir" ? -1 : 1;
+            }
+
+            return a.fileName.localeCompare(b.fileName);
+        });
 
         set(st => ({...st, files: {...st.files, [key]: files}}));
     },
