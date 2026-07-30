@@ -348,7 +348,10 @@ func (f *FileGateway) RestoreFiles(fileOwnerID string, fileIDs ...string) error 
 	return nil
 }
 
-// GetFilesByAccountIdAndParentId retrieves the files of a given folder ID.
+// GetFilesByAccountIdAndParentId retrieves the files of a given folder ID. By default it will
+// return the files sorted in the following order:
+//   - file type (dir, file)
+//   - file name
 //
 // If the given parent folder ID does not exist, it will return a 404 and an error.
 func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFolderID string) ([]file.File, error) {
@@ -367,12 +370,14 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 
 	args := []any{accountId, parentFolderID}
 
+	// sorted by dir -> file name
 	query := fmt.Sprintf(`
 		SELECT f.*
 		FROM %s f 
 		JOIN %s 
 			ON u.%s = f.%s 
 		WHERE u.%s = ? AND f.%s = ?
+		ORDER BY f.%s, f.%s
 		`,
 		file.TableName,
 		fmt.Sprintf("%s u", user.TableName),
@@ -380,6 +385,8 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 		file.ColumnFileOwnerID,
 		user.ColumnAccountID,
 		file.ColumnParentID,
+		file.ColumnFileType,
+		file.ColumnFileName,
 	)
 
 	rows, err := f.database.Query(query, args...)
