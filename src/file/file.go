@@ -102,7 +102,7 @@ type File struct {
 
 // FileResponse is the struct representing a File object
 // from the backend. It is the same struct as File, excluding
-// the field FilePath, OwnerID, and UniqueHash.
+// the field FilePath and OwnerID.
 type FileResponse struct {
 	Name         string       `json:"fileName"`
 	Type         FileType     `json:"fileType"`
@@ -113,6 +113,7 @@ type FileResponse struct {
 	ModifiedOn   time.Time    `json:"modifedOn"`
 	DeletedOn    *time.Time   `json:"deletedOn"`
 	UploadStatus UploadStatus `json:"uploadStatus"`
+	UniqueHash   string       `json:"uniqueHash"`
 }
 
 // NewFile creates a new File with the file ID, modified date,
@@ -267,6 +268,7 @@ func (f *File) ToFileResponse() *FileResponse {
 		ModifiedOn:   f.ModifiedOn,
 		DeletedOn:    f.DeletedOn,
 		UploadStatus: f.UploadStatus,
+		UniqueHash:   f.UniqueHash,
 	}
 }
 

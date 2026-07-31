@@ -42,22 +42,28 @@ type FileGateway struct {
 }
 
 // GetAllFiles returns a FileResponse slice of all File rows belonging to the file owner.
+// It will automatically be sorted in ascending order with dir > file and in alphabetical
+// order.
 //
 // If an error occurs then it will return an error, and abort
 // the scanning process if it is occurring.
 func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, error) {
-	query, args, err := sqlquery.Select(
-		file.TableName,
+	query := fmt.Sprintf(
+		`SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+		FROM %s
+		WHERE %s = ?
+		ORDER BY %s, %s`,
 		file.ColumnFileName, file.ColumnFileType,
 		file.ColumnFileID, file.ColumnFileExtension,
 		file.ColumnParentID, file.ColumnFileSize,
 		file.ColumnModifiedOn, file.ColumnDeletedOn,
-		file.ColumnUploadStatus,
-	).Where().Equal(file.ColumnFileOwnerID, fileOwnerID).Build()
-	if err != nil {
-		f.deps.Log.Criticalf("Failed to build query: %v | Query: %s | Args: %d", err, query, len(args))
-		return nil, SqlErr
-	}
+		file.ColumnUploadStatus, file.ColumnUniqueHash,
+		file.TableName,
+		file.ColumnFileOwnerID,
+		file.ColumnFileType, file.ColumnFileName,
+	)
+
+	args := []any{fileOwnerID}
 
 	rows, err := f.database.Query(query, args...)
 	if err != nil {
@@ -69,6 +75,42 @@ func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, erro
 	err = SelectRows(rows, &files)
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to retrieve data from query: %v | Query: %s", err, query)
+		return nil, SqlErr
+	}
+
+	return files, nil
+}
+
+// GetDeletedFiles retrieves all files that are marked for deletion, or if the
+// deleted column date is not null.
+func (f *FileGateway) GetDeletedFiles(fileOwnerID string) ([]file.FileResponse, error) {
+	query, args, err := sqlquery.Select(
+		file.TableName,
+		file.ColumnFileName, file.ColumnFileType,
+		file.ColumnFileID, file.ColumnFileExtension,
+		file.ColumnParentID, file.ColumnFileSize,
+		file.ColumnModifiedOn, file.ColumnDeletedOn,
+		file.ColumnUploadStatus, file.ColumnUniqueHash,
+	).Where().Equal(file.ColumnFileOwnerID, fileOwnerID).And().Is(
+		file.ColumnDeletedOn, "NOT NULL",
+	).Build()
+	if err != nil {
+		return nil, logSqlBuildError(f.deps.Log, err, query, args)
+	}
+
+	// due to the way IS works the last arg must be dropped
+	// TODO: fix this bruh!
+	args = args[:len(args)-1]
+
+	rows, err := f.database.Query(query, args...)
+	if err != nil {
+		return nil, logQueryError(f.deps.Log, err, query)
+	}
+
+	var files []file.FileResponse
+	err = SelectRows(rows, &files)
+	if err != nil {
+		f.deps.Log.Criticalf("Failed to select rows from query: %v", err)
 		return nil, SqlErr
 	}
 
@@ -255,9 +297,11 @@ func (f *FileGateway) UpdateModifiedFiles(fileOwnerID string, fileIDs ...string)
 	return nil
 }
 
-// DeleteFile sets a slice of file IDs to be marked for deletion.
+// DeleteFiles sets a slice of file IDs for deletion.
+// It will set the file IDs for deletion by setting the date 15 days from the current
+// date.
 //
-// This does not delete the files immediately but marks the deletion date 15 days from today.
+// This method does not delete files from the database immediately.
 func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs ...string) error {
 	if len(fileIDs) == 0 {
 		f.deps.Log.Critical("Failed to delete files, got file IDs length 0")
@@ -304,7 +348,10 @@ func (f *FileGateway) RestoreFiles(fileOwnerID string, fileIDs ...string) error 
 	return nil
 }
 
-// GetFilesByAccountIdAndParentId retrieves the files of a given folder ID.
+// GetFilesByAccountIdAndParentId retrieves the files of a given folder ID. By default it will
+// return the files sorted in the following order:
+//   - file type (dir, file)
+//   - file name
 //
 // If the given parent folder ID does not exist, it will return a 404 and an error.
 func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFolderID string) ([]file.File, error) {
@@ -323,12 +370,14 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 
 	args := []any{accountId, parentFolderID}
 
+	// sorted by dir -> file name
 	query := fmt.Sprintf(`
 		SELECT f.*
 		FROM %s f 
 		JOIN %s 
 			ON u.%s = f.%s 
 		WHERE u.%s = ? AND f.%s = ?
+		ORDER BY f.%s, f.%s
 		`,
 		file.TableName,
 		fmt.Sprintf("%s u", user.TableName),
@@ -336,6 +385,8 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 		file.ColumnFileOwnerID,
 		user.ColumnAccountID,
 		file.ColumnParentID,
+		file.ColumnFileType,
+		file.ColumnFileName,
 	)
 
 	rows, err := f.database.Query(query, args...)

@@ -65,7 +65,7 @@ func TestGetFilesByAccountAndParent(t *testing.T) {
 		assert.Nil(t, err)
 
 		assert.Equal(t, len(output), 2)
-		assert.Equal(t, output[0].FileID, tests.DbRowInfo.FileID)
+		assert.Equal(t, output[1].FileID, tests.DbRowInfo.FileID)
 	})
 
 	t.Run("Child files from folder", func(t *testing.T) {

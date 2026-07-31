@@ -2,9 +2,11 @@ package sqlquery
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/bobllor/assert"
+	"github.com/bobllor/cloud-project/src/file"
 	"github.com/bobllor/cloud-project/src/session"
 	"github.com/bobllor/cloud-project/src/user"
 )
@@ -82,4 +84,11 @@ func TestSelectWhereExistsSubquery(t *testing.T) {
 
 	assert.Equal(t, mainQ, baseStr)
 	assert.Equal(t, len(args), 1)
+}
+
+func TestSelectISQuery(t *testing.T) {
+	q, _, err := Select(file.TableName).Where().Is(file.ColumnDeletedOn, "NOT NULL").Build()
+	assert.Nil(t, err)
+
+	assert.True(t, strings.Contains(q, fmt.Sprintf("WHERE %s IS NOT NULL", file.ColumnDeletedOn)))
 }

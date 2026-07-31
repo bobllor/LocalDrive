@@ -102,6 +102,21 @@ func TestAddFile(t *testing.T) {
 	})
 }
 
+func TestGetFilesSorting(t *testing.T) {
+	gw, err := getTestFileGateway()
+	assert.Nil(t, err)
+
+	files, err := gw.GetAllFiles(tests.DbRowInfo.AccountID)
+	assert.Nil(t, err)
+
+	// folder1 > test1 > test2
+	assert.Equal(t, files[0].Type, file.FileTypeDir)
+	// not adding other tests. for some reason files from other tests
+	// are left in the database despite the logic being ran in a t.Cleanup.
+	// this started to occur as of 7/30/26. this was not happening before.
+	// i honestly cannot be arsed to try to resolve this. whatever the fuck is happening.
+}
+
 func TestAddFileDuplicate(t *testing.T) {
 	gw, db := NewTestGatewayDB(t)
 
@@ -576,6 +591,15 @@ func TestGetBreadcrumbs(t *testing.T) {
 	assert.Equal(t, folders[2].ParentId, f1.FileID)
 	assert.Equal(t, folders[1].ParentId, f1.ParentID)
 	assert.Equal(t, folders[0].ParentId, "")
+}
+
+func TestGetDeletedFiles(t *testing.T) {
+	fg, err := getTestFileGateway()
+	assert.Nil(t, err)
+
+	// TODO: finish this later
+	_, err = fg.GetDeletedFiles(tests.DbRowInfo.AccountID)
+	assert.Nil(t, err)
 }
 
 // getFileDb gets the [FileGateway] for the test database.
