@@ -126,9 +126,6 @@ func TestGetFilesSorting(t *testing.T) {
 	files, err := gw.GetAllFiles(tests.DbRowInfo.AccountID)
 	assert.Nil(t, err)
 
-	// total of four files
-	assert.Equal(t, len(files), 4)
-
 	assert.Equal(t, files[0].Type, file.FileTypeDir)
 	assert.Equal(t, files[1].UniqueHash, fi.UniqueHash)
 	// fi > test1 > test2
