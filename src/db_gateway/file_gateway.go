@@ -83,24 +83,25 @@ func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, erro
 
 // GetDeletedFiles retrieves all files that are marked for deletion, or if the
 // deleted column date is not null.
+//
+// The file response will be sorted in the order of file type > file name.
 func (f *FileGateway) GetDeletedFiles(fileOwnerID string) ([]file.FileResponse, error) {
-	query, args, err := sqlquery.Select(
-		file.TableName,
+	query := fmt.Sprintf(
+		`SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+		FROM %s
+		WHERE %s = ? AND %s IS NOT NULL
+		ORDER BY %s, %s`,
 		file.ColumnFileName, file.ColumnFileType,
 		file.ColumnFileID, file.ColumnFileExtension,
 		file.ColumnParentID, file.ColumnFileSize,
 		file.ColumnModifiedOn, file.ColumnDeletedOn,
 		file.ColumnUploadStatus, file.ColumnUniqueHash,
-	).Where().Equal(file.ColumnFileOwnerID, fileOwnerID).And().Is(
-		file.ColumnDeletedOn, "NOT NULL",
-	).Build()
-	if err != nil {
-		return nil, logSqlBuildError(f.deps.Log, err, query, args)
-	}
+		file.TableName,
+		file.ColumnFileOwnerID, file.ColumnDeletedOn,
+		file.ColumnFileType, file.ColumnFileName,
+	)
 
-	// due to the way IS works the last arg must be dropped
-	// TODO: fix this bruh!
-	args = args[:len(args)-1]
+	args := []any{fileOwnerID}
 
 	rows, err := f.database.Query(query, args...)
 	if err != nil {
