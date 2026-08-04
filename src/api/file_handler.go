@@ -22,6 +22,7 @@ const (
 	FileGetFileRootRoute            = "GET /api/storage"
 	FileGetFileParentRoute          = "GET /api/storage/folder/{parentId}"
 	FileGetFolderBreadcrumbsRoute   = "GET /api/folders/{folderId}/breadcrumbs"
+	FileGetDeletedFilesRoute        = "GET /api/storage/trash"
 	FilePostUploadFileRoute         = "POST /api/upload"
 	FilePostUploadFileChunkRoute    = "POST /api/upload/{id}/{chunkIndex}"
 	FilePostUploadFileCompleteRoute = "POST /api/upload/{id}/complete"
@@ -692,6 +693,31 @@ func (fh *FileHandler) GetFolderBreadcrumbs(w http.ResponseWriter, r *http.Reque
 	}
 
 	fh.util.Log.Debugf("Wrote %d bytes to response with folders", n)
+}
+
+// GetDeletedFiles retrieves all files marked for deletion.
+func (fh *FileHandler) GetDeletedFiles(w http.ResponseWriter, r *http.Request) {
+	usercontext, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
+	if !ok {
+		fh.util.HttpWriteUnauthorizedError(w, r)
+		return
+	}
+
+	files, err := fh.gateway.File.GetDeletedFiles(usercontext.AccountId)
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "An error occurred while retrieving deleted files: %v", err)
+		return
+	}
+
+	res := NewApiResponse(files)
+
+	n, err := WriteResponse(w, res)
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "An error occurred while writing response: %v", err)
+		return
+	}
+
+	fh.util.Log.Debugf("Wrote %d bytes to response", n)
 }
 
 // RenameFile renames a file via a PATCH request. Upon a successful name change, it will return back
