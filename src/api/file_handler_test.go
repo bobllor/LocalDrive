@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/bobllor/assert"
 	dbgateway "github.com/bobllor/cloud-project/src/db_gateway"
@@ -843,6 +844,54 @@ func TestRenameFile(t *testing.T) {
 	}
 }
 
+func TestGetDeletedFiles(t *testing.T) {
+	gw, db := dbgateway.NewTestGatewayDB(t)
+
+	fname := "deletedfilename"
+	dname := "deleteddirname"
+	df := file.NewFile(tests.DbRowInfo.AccountID, fname, file.FileTypeFile, "", 0, "", file.UploadCompleted)
+	dd := file.NewFile(tests.DbRowInfo.AccountID, dname, file.FileTypeDir, "", 0, "", file.UploadCompleted)
+	now := time.Now()
+
+	df.DeletedOn = &now
+	dd.DeletedOn = &now
+
+	err := gw.File.AddFile(df, dd)
+	assert.Nil(t, err)
+
+	t.Cleanup(func() {
+		dbgateway.DropRows(db, file.TableName, file.ColumnFileID, df.FileID, dd.FileID)
+	})
+
+	serv := newTestServer(gw)
+	defer serv.Close()
+
+	url := serv.URL + "/api/storage/trash"
+	tc := serv.Client()
+
+	req, err := tests.NewRequest("GET", url, nil)
+	assert.Nil(t, err)
+
+	req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+	res, err := tc.Do(req)
+	assert.Nil(t, err)
+
+	defer res.Body.Close()
+
+	var apires ApiResponse[[]file.FileResponse]
+	err = json.NewDecoder(res.Body).Decode(&apires)
+	assert.Nil(t, err)
+
+	files := apires.Output
+	assert.Equal(t, apires.Status, StatusSuccess)
+	assert.Equal(t, len(files), 2)
+
+	// sorting check
+	assert.Equal(t, files[0].FileID, dd.FileID)
+	assert.Equal(t, files[1].FileID, df.FileID)
+}
+
 // newTestServer creates a new test HTTP server with all the
 // default routes and functions from the File handler. It will automatically
 // wrap handlers in middleware.
@@ -861,6 +910,7 @@ func newTestServer(gw *dbgateway.Gateway) *httptest.Server {
 	mux.Handle(FilePostAddFolderRoute, ap.CreateAuthMiddleware(ap.FileHandler.PostAddFolder))
 	mux.Handle(FileGetFolderBreadcrumbsRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFolderBreadcrumbs))
 	mux.Handle(FilePatchRenameFile, ap.CreateAuthMiddleware(ap.FileHandler.RenameFile))
+	mux.Handle(FileGetDeletedFilesRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetDeletedFiles))
 
 	serv := httptest.NewServer(mux)
 
