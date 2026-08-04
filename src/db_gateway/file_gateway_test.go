@@ -597,9 +597,28 @@ func TestGetDeletedFiles(t *testing.T) {
 	fg, err := getTestFileGateway()
 	assert.Nil(t, err)
 
-	// TODO: finish this later
-	_, err = fg.GetDeletedFiles(tests.DbRowInfo.AccountID)
+	name := "deletefiles"
+	nfi := file.NewFile(tests.DbRowInfo.AccountID, name, file.FileTypeFile, "txt", 0, "", file.UploadCompleted)
+	now := time.Now()
+	nfi.DeletedOn = &now
+
+	nfid := file.NewFile(tests.DbRowInfo.AccountID, name, file.FileTypeDir, "", 0, "", file.UploadCompleted)
+	nfid.DeletedOn = &now
+
+	t.Cleanup(func() {
+		DropRows(fg.database, file.TableName, file.ColumnFileID, nfi.FileID, nfid.FileID)
+	})
+
+	err = fg.AddFile(nfi, nfid)
 	assert.Nil(t, err)
+
+	fis, err := fg.GetDeletedFiles(tests.DbRowInfo.AccountID)
+	assert.Nil(t, err)
+
+	assert.Equal(t, len(fis), 2)
+	// dir > file (sort order)
+	assert.Equal(t, fis[0].FileID, nfid.FileID)
+	assert.Equal(t, fis[1].FileID, nfi.FileID)
 }
 
 // getFileDb gets the [FileGateway] for the test database.
