@@ -17,7 +17,7 @@ type SqlSelect struct {
 	// Args is any arguments used as the params in a query.
 	Args []any
 
-	// where is used to build WHERE conditionals.
+	// where is used to build WHERE clauses.
 	// Initially this will be nil until the method Where is
 	// explictly called in order to create the conditions.
 	where *ConditionClause
