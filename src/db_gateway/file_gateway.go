@@ -298,15 +298,15 @@ func (f *FileGateway) UpdateModifiedFiles(fileOwnerID string, fileIDs ...string)
 	return nil
 }
 
-// DeleteFiles sets a slice of file IDs for deletion.
+// DeleteFiles sets a slice of file ID's deletion date for a soft deletion.
+// It will return the number of rows that were affected.
+//
 // It will set the file IDs for deletion by setting the date 15 days from the current
 // date.
-//
-// This method does not delete files from the database immediately.
-func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs ...string) error {
+func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs ...string) (int, error) {
 	if len(fileIDs) == 0 {
 		f.deps.Log.Critical("Failed to delete files, got file IDs length 0")
-		return ServerErr
+		return 0, ServerErr
 	}
 
 	const DAYS_UNTIL_DELETE = 15
@@ -316,18 +316,26 @@ func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs ...string) error {
 		Where().Equal(file.ColumnFileOwnerID, fileOwnerID).
 		And().In(file.ColumnFileID, utils.ConvertToAny(fileIDs)...).Build()
 	if err != nil {
-		return logSqlBuildError(f.deps.Log, err, query, args)
+		return 0, logSqlBuildError(f.deps.Log, err, query, args)
 	}
 
 	res, err := execQuery(f.database, query, args...)
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to execute query: %v | Query: %s", err, query)
-		return SqlErr
+		return 0, SqlErr
 	}
 
 	logResultRows(f.deps.Log, res)
 
-	return nil
+	// not sure what to do with the error here. i guess if a wrong DB is used, but
+	// mysql supports this. so will just log and return nil?
+	n, err := res.RowsAffected()
+	if err != nil {
+		f.deps.Log.Warnf("Failed to check affected rows: %v", err)
+		return 0, nil
+	}
+
+	return int(n), nil
 }
 
 // RestoreFiles sets a file IDs that are unmark files that were marked for deletion.
