@@ -242,7 +242,7 @@ func TestDeleteFiles(t *testing.T) {
 		setDefaultFileColumn(fDb, file.ColumnDeletedOn, nil)
 	})
 
-	err = fDb.DeleteFiles(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
+	_, err = fDb.DeleteFiles(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
 	assert.Nil(t, err)
 
 	qFile, err := fDb.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
@@ -261,11 +261,21 @@ func TestDeleteFiles(t *testing.T) {
 	assert.Equal(t, qDate.Day(), expectedTime.Day())
 }
 
+func TestDeleteFilesInvalidFileId(t *testing.T) {
+	gw, err := getTestFileGateway()
+	assert.Nil(t, err)
+
+	rows, err := gw.DeleteFiles(tests.DbRowInfo.AccountID, "thisfiledoesnotexistatall")
+	assert.Nil(t, err)
+
+	assert.Equal(t, rows, 0)
+}
+
 func TestRestoreFiles(t *testing.T) {
 	fDb, err := getTestFileGateway()
 	assert.Nil(t, err)
 
-	err = fDb.DeleteFiles(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
+	_, err = fDb.DeleteFiles(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
 	assert.Nil(t, err)
 
 	qFile, err := fDb.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
