@@ -54,3 +54,13 @@ func TestHashString(t *testing.T) {
 	assert.Equal(t, len(s), 64)
 	assert.Equal(t, s, baseHash)
 }
+
+func TestRemoveDuplicates(t *testing.T) {
+	vs := []string{"hello", "there", "hello", "no", "yes", "yes"}
+	baseLen := len(vs)
+
+	vs = RemoveDuplicates(vs)
+	newLen := len(vs)
+
+	assert.NotEqual(t, baseLen, newLen)
+}
