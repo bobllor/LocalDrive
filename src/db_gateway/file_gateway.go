@@ -45,13 +45,15 @@ type FileGateway struct {
 // It will automatically be sorted in ascending order with dir > file and in alphabetical
 // order.
 //
+// This does not include files that are set to be deleted.
+//
 // If an error occurs then it will return an error, and abort
 // the scanning process if it is occurring.
 func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, error) {
 	query := fmt.Sprintf(
 		`SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 		FROM %s
-		WHERE %s = ?
+		WHERE %s = ? AND %s IS NULL
 		ORDER BY %s, %s`,
 		file.ColumnFileName, file.ColumnFileType,
 		file.ColumnFileID, file.ColumnFileExtension,
@@ -59,7 +61,7 @@ func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, erro
 		file.ColumnModifiedOn, file.ColumnDeletedOn,
 		file.ColumnUploadStatus, file.ColumnUniqueHash,
 		file.TableName,
-		file.ColumnFileOwnerID,
+		file.ColumnFileOwnerID, file.ColumnDeletedOn,
 		file.ColumnFileType, file.ColumnFileName,
 	)
 
