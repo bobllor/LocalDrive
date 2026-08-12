@@ -600,11 +600,7 @@ func TestUpdateStatusFailSuccess(t *testing.T) {
 	gw, db := dbgateway.NewTestGatewayDB(t, dbgateway.GatewayDBOptions{CreateTemp: true})
 	ap := NewApiHandler(gw, tests.NewTestLogger())
 
-	mux := http.NewServeMux()
-	mux.Handle(FilePostUploadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadGenerateId))
-	mux.Handle(FilePatchUpdateFileStatus, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileStatusFailed))
-
-	serv := httptest.NewServer(mux)
+	serv := newTestServer(gw)
 	defer serv.Close()
 
 	tc := serv.Client()
@@ -892,6 +888,70 @@ func TestGetDeletedFiles(t *testing.T) {
 	assert.Equal(t, files[1].FileID, df.FileID)
 }
 
+func TestDeleteFile(t *testing.T) {
+	gw, db := dbgateway.NewTestGatewayDB(t)
+
+	serv := newTestServer(gw)
+	cases := []struct {
+		name      string
+		addFile   bool
+		isSuccess bool
+	}{
+		{
+			name:      "Successful deletion",
+			addFile:   true,
+			isSuccess: true,
+		},
+		{
+			name: "Failed deletion",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fi := file.NewFile(tests.DbRowInfo.AccountID, c.name, file.FileTypeFile, ".txt", 0, "", file.UploadCompleted)
+
+			if c.addFile {
+				t.Cleanup(func() {
+					dbgateway.DropRows(db, file.TableName, file.ColumnFileID, fi.FileID)
+				})
+
+				err := gw.File.AddFile(fi)
+				assert.Nil(t, err)
+			}
+
+			url := serv.URL + "/api/file/delete/" + fi.FileID
+
+			req, err := tests.NewRequest("DELETE", url, nil)
+			assert.Nil(t, err)
+
+			req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+			tc := serv.Client()
+
+			res, err := tc.Do(req)
+			assert.Nil(t, err)
+
+			apires, err := utils.Decode[*ApiResponse[bool]](res.Body)
+			assert.Nil(t, err)
+
+			if c.isSuccess {
+				assert.Equal(t, apires.Status, StatusSuccess)
+				assert.True(t, apires.Output)
+
+				sfi, err := gw.File.GetFile(tests.DbRowInfo.AccountID, fi.FileID)
+				assert.Nil(t, err)
+
+				assert.NotNil(t, sfi)
+				assert.Equal(t, sfi.FileID, fi.FileID)
+			} else {
+				assert.Equal(t, apires.Status, StatusError)
+				assert.False(t, apires.Output)
+			}
+		})
+	}
+}
+
 // newTestServer creates a new test HTTP server with all the
 // default routes and functions from the File handler. It will automatically
 // wrap handlers in middleware.
@@ -903,14 +963,15 @@ func newTestServer(gw *dbgateway.Gateway) *httptest.Server {
 	mux.Handle(FilePostUploadFileChunkRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileChunk))
 	mux.Handle(FilePostUploadFileCompleteRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileComplete))
 	mux.Handle(FilePostUploadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadGenerateId))
-	mux.Handle(FilePatchUpdateFileStatus, ap.CreateRequestMiddleware(ap.FileHandler.UploadFileStatusFailed))
+	mux.Handle(FilePatchUpdateFileStatusRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileStatusFailed))
 	mux.Handle(FileGetFileRootRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFiles))
 	mux.Handle(FileGetFileParentRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFiles))
 	mux.Handle(FilePostDownloadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.DownloadFile))
 	mux.Handle(FilePostAddFolderRoute, ap.CreateAuthMiddleware(ap.FileHandler.PostAddFolder))
 	mux.Handle(FileGetFolderBreadcrumbsRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFolderBreadcrumbs))
-	mux.Handle(FilePatchRenameFile, ap.CreateAuthMiddleware(ap.FileHandler.RenameFile))
+	mux.Handle(FilePatchRenameFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.RenameFile))
 	mux.Handle(FileGetDeletedFilesRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetDeletedFiles))
+	mux.Handle(FileDeleteFileDeleteionRoute, ap.CreateAuthMiddleware(ap.FileHandler.DeleteFile))
 
 	serv := httptest.NewServer(mux)
 
