@@ -28,8 +28,9 @@ const (
 	FilePostUploadFileCompleteRoute = "POST /api/upload/{id}/complete"
 	FilePostDownloadFileRoute       = "GET /api/download/file/{fileId}"
 	FilePostAddFolderRoute          = "POST /api/folders/add"
-	FilePatchUpdateFileStatus       = "PATCH /api/upload/{id}/fail"
-	FilePatchRenameFile             = "PATCH /api/file/rename"
+	FilePatchUpdateFileStatusRoute  = "PATCH /api/upload/{id}/fail"
+	FilePatchRenameFileRoute        = "PATCH /api/file/rename"
+	FileDeleteFileDeleteionRoute    = "DELETE /api/file/delete/{id}"
 )
 
 const CHUNKS_DIR_NAME = "lcschunks"
@@ -795,6 +796,56 @@ func (fh *FileHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fh.util.Log.Debugf("Wrote %d bytes to response for rename file", n)
+}
+
+// DeleteFile soft deletes a file ID by setting the DeleteOn value to
+// the time of the request was received.
+//
+// It will return a boolean response indicating its status. If all rows
+// are successfully updated, then it will return a success.
+func (fh *FileHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
+	usrContext, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
+	if !ok {
+		fh.util.HttpWriteUnauthorizedError(w, r)
+		return
+	}
+	defer r.Body.Close()
+
+	fileId := r.PathValue("id")
+	if strings.TrimSpace(fileId) == "" {
+		fh.util.HttpWriteCustomBadDataError(w, "Missing file ID", ReasonBadRequestData, "Given File ID for deletion is empty")
+		return
+	}
+
+	deletedRows, err := fh.gateway.File.DeleteFiles(usrContext.AccountId, fileId)
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "An error occurred while deleting file (%s): %v", fileId, err)
+		return
+	}
+
+	res := NewApiResponse(deletedRows == 1)
+	if res.Output == false {
+		resError := &Error{
+			Code:    http.StatusBadRequest,
+			Reason:  ReasonBadRequestData,
+			Message: "Failed to delete file, the file does not exist",
+		}
+
+		res.Status = StatusError
+		res.Error = resError
+	}
+
+	resBytes, err := WriteResponse(w, res)
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "Failed to write response: %v", err)
+		return
+	}
+
+	if res.Output {
+		fh.util.Log.Infof("Marked file for deletion (%s)", fileId)
+	}
+
+	fh.util.Log.Debugf("Wrote %d bytes to response", resBytes)
 }
 
 // mkAccountDir creates the directory of the account ID in the storage folder.
