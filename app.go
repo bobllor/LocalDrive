@@ -164,6 +164,7 @@ func createServer(gw *dbgateway.Gateway, logger *gologger.Logger, serverAddress 
 	// handles both dynamic and root based access
 	serv.RegisterHandler(api.FileGetFileRootRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFiles))
 	serv.RegisterHandler(api.FileGetFileParentRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFiles))
+	serv.RegisterHandler(api.FileGetDeletedFilesRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetDeletedFiles))
 
 	serv.RegisterHandler(api.FilePostDownloadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.DownloadFile))
 	serv.RegisterHandler(api.FilePostAddFolderRoute, ap.CreateAuthMiddleware(ap.FileHandler.PostAddFolder))
@@ -173,8 +174,9 @@ func createServer(gw *dbgateway.Gateway, logger *gologger.Logger, serverAddress 
 	serv.RegisterHandler(api.FilePostUploadFileCompleteRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileComplete))
 	serv.RegisterHandler(api.FilePostUploadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadGenerateId))
 
-	serv.RegisterHandler(api.FilePatchUpdateFileStatus, ap.CreateRequestMiddleware(ap.FileHandler.UploadFileStatusFailed))
-	serv.RegisterHandler(api.FilePatchRenameFile, ap.CreateAuthMiddleware(ap.FileHandler.RenameFile))
+	serv.RegisterHandler(api.FilePatchUpdateFileStatusRoute, ap.CreateRequestMiddleware(ap.FileHandler.UploadFileStatusFailed))
+	serv.RegisterHandler(api.FilePatchRenameFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.RenameFile))
+	serv.RegisterHandler(api.FileDeleteFileDeleteionRoute, ap.CreateAuthMiddleware(ap.FileHandler.DeleteFile))
 
 	// other
 	serv.RegisterHandler(api.FileGetFolderBreadcrumbsRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFolderBreadcrumbs))
