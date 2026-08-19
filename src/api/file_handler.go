@@ -824,14 +824,15 @@ func (fh *FileHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res := NewApiResponse(deletedRows == 1)
+	// output will either be 1 or 0, if it is 0 then this has failed.
 	if res.Output == false {
 		resError := &Error{
-			Code:    http.StatusBadRequest,
-			Reason:  ReasonBadRequestData,
+			Code:    http.StatusNotFound,
+			Reason:  ReasonNotFound,
 			Message: "Failed to delete file, the file does not exist",
 		}
 
-		res.Status = StatusError
+		res.Status = StatusSuccess
 		res.Error = resError
 	}
 
