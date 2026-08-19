@@ -1,0 +1,1 @@
+export const FILE_ROW_BUTTON_CSS = "hover:bg-gray-500 rounded-2xl px-1.5 flex justify-center items-center"
