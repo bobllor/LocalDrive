@@ -945,8 +945,13 @@ func TestDeleteFile(t *testing.T) {
 				assert.NotNil(t, sfi)
 				assert.Equal(t, sfi.FileID, fi.FileID)
 			} else {
-				assert.Equal(t, apires.Status, StatusError)
+				assert.Equal(t, apires.Status, StatusSuccess)
+
 				assert.False(t, apires.Output)
+
+				assert.NotNil(t, apires.Error)
+				assert.Equal(t, apires.Error.Code, http.StatusNotFound)
+				assert.Equal(t, apires.Error.Reason, ReasonNotFound)
 			}
 		})
 	}
