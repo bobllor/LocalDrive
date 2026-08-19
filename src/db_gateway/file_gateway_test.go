@@ -499,6 +499,33 @@ func TestGetFilesByAccountIDAndParentFolder(t *testing.T) {
 		assert.NotNil(t, err)
 		assert.Equal(t, err, FileDoesNotExistErr)
 	})
+
+	t.Run("Ignore deleted files", func(t *testing.T) {
+		deletedFile := file.NewFile(
+			tests.DbRowInfo.AccountID,
+			"deletedfile",
+			file.FileTypeFile,
+			".txt",
+			0,
+			"",
+			file.UploadCompleted,
+		)
+
+		t.Cleanup(func() {
+			DropRows(fg.database, file.TableName, file.ColumnFileID, deletedFile.FileID)
+		})
+
+		err := fg.AddFile(deletedFile)
+		assert.Nil(t, err)
+
+		baseFiles, err := fg.GetAllFiles(tests.DbRowInfo.AccountID)
+		assert.Nil(t, err)
+
+		files, err := fg.GetFilesByAccountIdAndParentId(tests.DbRowInfo.AccountID, "")
+		assert.Nil(t, err)
+
+		assert.True(t, len(files) < len(baseFiles))
+	})
 }
 
 func TestValidateFileExists(t *testing.T) {
