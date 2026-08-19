@@ -10,6 +10,7 @@ import ModalBase from "../../ui/ModalBase";
 import { FileUploader } from "./file-ops-components/file-uploader";
 import Breadcrumbs from "./ui/Breadcrumbs";
 import RenameFile from "../modal-components/RenameFile";
+import { NavigationMenu } from "./NavigationMenu";
 
 export type ModalOperation = "" | "addFolder" | "renameFile";
 
@@ -35,7 +36,14 @@ export default function StorageHome(): JSX.Element{
     }
 
     const navigate = useNavigate();
-    const files = useFileDisplay();
+
+    let files: Array<FileResponse> = [];
+    // TODO: change this to be a proper check, for now keep for development
+    if(window.location.href.endsWith("/storage/trash")){
+        files = useFileDisplayTrash();
+    }else{
+        files = useFileDisplay();
+    }
 
     const [showBlur, setShowBlur] = useState(false);
     const [modalOp, setModalOp] = useState<ModalOperation>("");
@@ -67,7 +75,8 @@ export default function StorageHome(): JSX.Element{
                     Logout
                 </button>
                 <Breadcrumbs />
-                <div className="w-full border">
+                <div className="w-full border flex">
+                    <NavigationMenu />
                     <Suspense fallback={<div>Temporary: Loading...</div>}>
                         <FileListDisplay files={files} setBlur={setShowBlur} setModalOp={setModalOp} setFileId={setFileId} />
                     </Suspense>
@@ -156,6 +165,24 @@ function useFileDisplay(): Array<FileResponse>{
     useEffect(() => {
         setFiles(params.folderId);
     }, [params.folderId]);
+
+    return files;
+}
+
+/**
+ * Hook used to retrieve deleted files from the API to display
+ * for the trash section.
+ * 
+ * Unlike the normal display hook, this fetches a different API without params.
+ */
+function useFileDisplayTrash(): Array<FileResponse>{
+    const {setFilesTrash, getFiles} = useFileStore();
+    const files = getFiles("trash");
+
+    useEffect(() => {
+        setFilesTrash();
+        // TODO: add dependency here.
+    }, [])
 
     return files;
 }
