@@ -31,6 +31,9 @@ var (
 
 	// ReasonUnauthorized is used for unauthenticated requests.
 	ReasonUnauthorized ReasonCode = "UNAUTHORIZED"
+
+	// ReasonNotFound is used for resource that is not found or doesn't exist.
+	ReasonNotFound ReasonCode = "NOT_FOUND"
 )
 
 var (
