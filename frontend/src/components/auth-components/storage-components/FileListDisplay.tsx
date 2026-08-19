@@ -8,6 +8,7 @@ import type { SetBlurFunc } from "../../ui/BackgroundBlur";
 import type { ModalOperation } from "./StorageHome";
 import DownloadButton from "./file-row-components/DownloadButton";
 import RenameButton from "./file-row-components/RenameButton";
+import DeleteButton from "./file-row-components/DeleteButton";
 
 type TableHeadObj = {
     text: string
@@ -133,6 +134,7 @@ function FileTableData({fileObj, setBlur, setModalOp, setFileId}: FileObjProps):
                     fileObj.fileType != "dir" && <DownloadButton fileObj={fileObj} />
                 }
                 <RenameButton fileObj={fileObj} renameFunction={renameOnClick} />
+                <DeleteButton fileObj={fileObj} />
             </td>
         </>
     )
