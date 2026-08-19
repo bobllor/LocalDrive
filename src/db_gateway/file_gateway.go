@@ -45,7 +45,7 @@ type FileGateway struct {
 // It will automatically be sorted in ascending order with dir > file and in alphabetical
 // order.
 //
-// This does not include files that are set to be deleted.
+// This includes any files set to be deleted.
 //
 // If an error occurs then it will return an error, and abort
 // the scanning process if it is occurring.
@@ -53,7 +53,7 @@ func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, erro
 	query := fmt.Sprintf(
 		`SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 		FROM %s
-		WHERE %s = ? AND %s IS NULL
+		WHERE %s = ?
 		ORDER BY %s, %s`,
 		file.ColumnFileName, file.ColumnFileType,
 		file.ColumnFileID, file.ColumnFileExtension,
@@ -61,7 +61,7 @@ func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, erro
 		file.ColumnModifiedOn, file.ColumnDeletedOn,
 		file.ColumnUploadStatus, file.ColumnUniqueHash,
 		file.TableName,
-		file.ColumnFileOwnerID, file.ColumnDeletedOn,
+		file.ColumnFileOwnerID,
 		file.ColumnFileType, file.ColumnFileName,
 	)
 
@@ -337,6 +337,8 @@ func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs ...string) (int, e
 		return 0, nil
 	}
 
+	f.deps.Log.Debugf("Marked %d row(s) for deletion", n)
+
 	return int(n), nil
 }
 
@@ -365,6 +367,8 @@ func (f *FileGateway) RestoreFiles(fileOwnerID string, fileIDs ...string) error 
 //   - file name
 //
 // If the given parent folder ID does not exist, it will return a 404 and an error.
+//
+// Deleted files are not included.
 func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFolderID string) ([]file.File, error) {
 	if parentFolderID != "" {
 		validID, err := f.validateFileExists(accountId, parentFolderID)
@@ -387,7 +391,7 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 		FROM %s f 
 		JOIN %s 
 			ON u.%s = f.%s 
-		WHERE u.%s = ? AND f.%s = ?
+		WHERE u.%s = ? AND f.%s = ? AND f.%s IS NULL
 		ORDER BY f.%s, f.%s
 		`,
 		file.TableName,
@@ -396,6 +400,7 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 		file.ColumnFileOwnerID,
 		user.ColumnAccountID,
 		file.ColumnParentID,
+		file.ColumnDeletedOn,
 		file.ColumnFileType,
 		file.ColumnFileName,
 	)
@@ -465,7 +470,7 @@ func (f *FileGateway) GetBreadcrumbs(accountId, folderId string) ([]BreadcrumbFi
 		return nil, err
 	}
 
-	f.deps.Log.Debugf("FileFolderInfo rows found: %d", len(files))
+	f.deps.Log.Debugf("Breadcrumb rows found: %d", len(files))
 
 	// reverse for breadcrumbs
 	slices.Reverse(files)
