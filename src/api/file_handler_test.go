@@ -862,7 +862,7 @@ func TestGetDeletedFiles(t *testing.T) {
 	serv := newTestServer(gw)
 	defer serv.Close()
 
-	url := serv.URL + "/api/storage/trash"
+	url := serv.URL + "/api/storage?type=trash"
 	tc := serv.Client()
 
 	req, err := tests.NewRequest("GET", url, nil)
@@ -975,7 +975,6 @@ func newTestServer(gw *dbgateway.Gateway) *httptest.Server {
 	mux.Handle(FilePostAddFolderRoute, ap.CreateAuthMiddleware(ap.FileHandler.PostAddFolder))
 	mux.Handle(FileGetFolderBreadcrumbsRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFolderBreadcrumbs))
 	mux.Handle(FilePatchRenameFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.RenameFile))
-	mux.Handle(FileGetDeletedFilesRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetDeletedFiles))
 	mux.Handle(FileDeleteFileDeleteionRoute, ap.CreateAuthMiddleware(ap.FileHandler.DeleteFile))
 
 	serv := httptest.NewServer(mux)
