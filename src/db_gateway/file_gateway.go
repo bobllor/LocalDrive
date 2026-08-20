@@ -342,23 +342,31 @@ func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs ...string) (int, e
 	return int(n), nil
 }
 
-// RestoreFiles sets a file IDs that are unmark files that were marked for deletion.
-func (f *FileGateway) RestoreFiles(fileOwnerID string, fileIDs ...string) error {
+// RestoreDeletedFiles sets a file IDs that are unmark files that were marked for deletion.
+// It returns the number of rows that are affected and an error.
+func (f *FileGateway) RestoreDeletedFiles(fileOwnerID string, fileIDs ...string) (int, error) {
 	query, args, err := sqlquery.Update(file.TableName, file.ColumnDeletedOn).Args(nil).
 		Where().Equal(file.ColumnFileOwnerID, fileOwnerID).
 		And().In(file.ColumnFileID, utils.ConvertToAny(fileIDs)...).Build()
 	if err != nil {
-		return logSqlBuildError(f.deps.Log, err, query, args)
+		return 0, logSqlBuildError(f.deps.Log, err, query, args)
 	}
 
 	res, err := execQuery(f.database, query, args...)
 	if err != nil {
-		return logQueryError(f.deps.Log, err, query)
+		return 0, logQueryError(f.deps.Log, err, query)
 	}
 
-	logResultRows(f.deps.Log, res)
+	n, err := res.RowsAffected()
+	// mentioned this before, but this is supported with mysql
+	// will just log and move on.
+	if err != nil {
+		f.deps.Log.Warnf("Failed to query rows for deleted files restoration: %v", err)
+	}
 
-	return nil
+	f.deps.Log.Debugf("Updated %d rows for restoration", n)
+
+	return int(n), nil
 }
 
 // GetFilesByAccountIdAndParentId retrieves the files of a given folder ID. By default it will
