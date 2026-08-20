@@ -164,7 +164,6 @@ func createServer(gw *dbgateway.Gateway, logger *gologger.Logger, serverAddress 
 	// handles both dynamic and root based access
 	serv.RegisterHandler(api.FileGetFileRootRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFiles))
 	serv.RegisterHandler(api.FileGetFileParentRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFiles))
-	serv.RegisterHandler(api.FileGetDeletedFilesRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetDeletedFiles))
 
 	serv.RegisterHandler(api.FilePostDownloadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.DownloadFile))
 	serv.RegisterHandler(api.FilePostAddFolderRoute, ap.CreateAuthMiddleware(ap.FileHandler.PostAddFolder))
