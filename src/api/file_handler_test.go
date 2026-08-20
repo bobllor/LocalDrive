@@ -21,6 +21,7 @@ import (
 	"github.com/bobllor/cloud-project/src/file"
 	"github.com/bobllor/cloud-project/src/tests"
 	"github.com/bobllor/cloud-project/src/utils"
+	"github.com/google/uuid"
 )
 
 func TestGetFilesByAccountAndParent(t *testing.T) {
@@ -957,6 +958,88 @@ func TestDeleteFile(t *testing.T) {
 	}
 }
 
+func TestRestoreDeletedFile(t *testing.T) {
+	gw, db := dbgateway.NewTestGatewayDB(t)
+
+	serv := newTestServer(gw)
+	tc := serv.Client()
+
+	cases := []struct {
+		name     string
+		file     *file.File
+		hasError bool
+	}{
+		{
+			name: "Normal run",
+			file: &file.File{
+				OwnerID:    tests.DbRowInfo.AccountID,
+				Name:       "filename",
+				Type:       file.FileTypeFile,
+				Size:       0,
+				Extension:  "txt",
+				FileID:     uuid.NewString(),
+				ModifiedOn: time.Now().UTC(),
+			},
+		},
+		{
+			name:     "Invalid ID",
+			hasError: true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fileId := "defaultinvalidfileid"
+
+			if c.file != nil {
+				fileId = c.file.FileID
+
+				t.Cleanup(func() {
+					dbgateway.DropRows(db, file.TableName, file.ColumnFileName, fileId)
+				})
+
+				err := gw.File.AddFile(*c.file)
+				assert.Nil(t, err)
+
+				n, err := gw.File.DeleteFiles(tests.DbRowInfo.AccountID, fileId)
+				assert.Nil(t, err)
+				assert.Equal(t, n, 1)
+
+				fi, err := gw.File.GetFile(tests.DbRowInfo.AccountID, fileId)
+				assert.Nil(t, err)
+
+				assert.NotNil(t, fi.DeletedOn)
+			}
+
+			req, err := tests.NewRequest("PATCH", serv.URL+"/api/file/restore/"+fileId, nil)
+			assert.Nil(t, err)
+
+			req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+			res, err := tc.Do(req)
+			assert.Nil(t, err)
+			defer res.Body.Close()
+
+			var apires *ApiResponse[bool]
+			err = json.NewDecoder(res.Body).Decode(&apires)
+
+			if !c.hasError {
+				assert.NotNil(t, apires)
+				assert.True(t, apires.Output)
+
+				fi, err := gw.File.GetFile(tests.DbRowInfo.AccountID, fileId)
+				assert.Nil(t, err)
+				assert.Nil(t, fi.DeletedOn)
+			} else {
+				assert.NotNil(t, apires)
+				assert.NotNil(t, apires.Error)
+
+				assert.False(t, apires.Output)
+			}
+		})
+	}
+}
+
 // newTestServer creates a new test HTTP server with all the
 // default routes and functions from the File handler. It will automatically
 // wrap handlers in middleware.
@@ -976,6 +1059,7 @@ func newTestServer(gw *dbgateway.Gateway) *httptest.Server {
 	mux.Handle(FileGetFolderBreadcrumbsRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFolderBreadcrumbs))
 	mux.Handle(FilePatchRenameFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.RenameFile))
 	mux.Handle(FileDeleteFileDeleteionRoute, ap.CreateAuthMiddleware(ap.FileHandler.DeleteFile))
+	mux.Handle(FilePatchRestoreFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.RestoreDeletedFiles))
 
 	serv := httptest.NewServer(mux)
 
