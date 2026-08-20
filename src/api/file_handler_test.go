@@ -995,7 +995,7 @@ func TestRestoreDeletedFile(t *testing.T) {
 				fileId = c.file.FileID
 
 				t.Cleanup(func() {
-					dbgateway.DropRows(db, file.TableName, file.ColumnFileName, fileId)
+					dbgateway.DropRows(db, file.TableName, file.ColumnFileID, fileId)
 				})
 
 				err := gw.File.AddFile(*c.file)
