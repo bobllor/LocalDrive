@@ -714,9 +714,57 @@ func (fh *FileHandler) GetFolderBreadcrumbs(w http.ResponseWriter, r *http.Reque
 	fh.util.Log.Debugf("Wrote %d bytes to response with folders", n)
 }
 
-// RestoreFiles restores a deleted file.
-func (fh *FileHandler) RestoreFiles(w http.ResponseWriter, r *http.Request) {
+// RestoreDeletedFiles restores a deleted file by updating the column to nil.
+//
+// Upon a successful restoration, it will return a ResponseApi[bool].
+//
+// This requires the auth middleware.
+func (fh *FileHandler) RestoreDeletedFiles(w http.ResponseWriter, r *http.Request) {
+	fileId := r.PathValue("id")
 
+	if strings.TrimSpace(fileId) == "" {
+		fh.util.HttpWriteCustomBadDataError(
+			w,
+			"File ID cannot be empty",
+			ReasonBadRequestData,
+			"Empty file ID given for restoration",
+		)
+		return
+	}
+
+	usercontext, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
+	if !ok {
+		fh.util.HttpWriteUnauthorizedError(w, r)
+		return
+	}
+
+	n, err := fh.gateway.File.RestoreDeletedFiles(usercontext.AccountId, fileId)
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "An internal error occurred while restoring deleted files: %v", err)
+		return
+	}
+
+	fh.util.Log.Infof("Restored %d files", n)
+
+	apires := NewApiResponse(n == 1)
+	if !apires.Output {
+		resError := &Error{
+			Code:    http.StatusNotFound,
+			Reason:  ReasonNotFound,
+			Message: "Failed to restore file, the file does not exist",
+		}
+
+		apires.Status = StatusSuccess
+		apires.Error = resError
+	}
+
+	bn, err := WriteResponse(w, apires)
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "Failed to write response: %v", err)
+		return
+	}
+
+	fh.util.Log.Debugf("Wrote %d bytes for restoration response", bn)
 }
 
 // RenameFile renames a file via a PATCH request. Upon a successful name change, it will return back
