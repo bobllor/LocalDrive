@@ -112,7 +112,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
         }
     },
     setFilesTrash: async () => {
-        const route = "/api/storage/trash";
+        const route = `/api/storage?type=trash`;
 
         try{
             const res = await fetchApi<Array<FileResponse>>(route);
