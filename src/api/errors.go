@@ -41,3 +41,13 @@ var (
 	ErrorUnauthorizedMsg  = "Unauthorized access"
 	ErrorBadDataMsg       = "Bad request data"
 )
+
+type responseError struct {
+	Message string
+	Code    int
+	Reason  ReasonCode
+}
+
+func (re *responseError) Error() string {
+	return re.Message
+}
