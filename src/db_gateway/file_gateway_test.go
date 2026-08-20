@@ -271,7 +271,7 @@ func TestDeleteFilesInvalidFileId(t *testing.T) {
 	assert.Equal(t, rows, 0)
 }
 
-func TestRestoreFiles(t *testing.T) {
+func TestRestoreDeletedFiles(t *testing.T) {
 	fDb, err := getTestFileGateway()
 	assert.Nil(t, err)
 
@@ -283,8 +283,9 @@ func TestRestoreFiles(t *testing.T) {
 
 	assert.NotNil(t, qFile.DeletedOn)
 
-	err = fDb.RestoreFiles(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
+	n, err := fDb.RestoreDeletedFiles(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
 	assert.Nil(t, err)
+	assert.Equal(t, n, 1)
 
 	qFile, err = fDb.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
 	assert.Nil(t, err)
