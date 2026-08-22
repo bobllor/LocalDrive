@@ -342,14 +342,34 @@ func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs ...string) (int, e
 	return int(n), nil
 }
 
-// RestoreDeletedFiles sets a file IDs that are unmark files that were marked for deletion.
+// RestoreDeletedFiles sets file IDs' deletion column to NULL.
 // It returns the number of rows that are affected and an error.
+//
+// If the parent folder is being deleted or does not exist with the given file ID,
+// then the parent ID of the given file will be set to root.
 func (f *FileGateway) RestoreDeletedFiles(fileOwnerID string, fileIDs ...string) (int, error) {
-	query, args, err := sqlquery.Update(file.TableName, file.ColumnDeletedOn).Args(nil).
-		Where().Equal(file.ColumnFileOwnerID, fileOwnerID).
-		And().In(file.ColumnFileID, utils.ConvertToAny(fileIDs)...).Build()
-	if err != nil {
-		return 0, logSqlBuildError(f.deps.Log, err, query, args)
+	// TODO: figure out a way to handle this update.
+	// the main issue is the given file IDs can have different parent IDs
+	query := fmt.Sprintf(`
+		UPDATE %s f
+		LEFT JOIN %s p
+			ON p.%s = f.%s
+			AND p.%s IS NULL
+		SET
+			f.%s = ?,
+			f.%s = COALESCE(p.%s, '')
+		WHERE f.%s = ? AND f.%s = ?`,
+		file.TableName,
+		file.TableName,
+		file.ColumnFileID, file.ColumnParentID,
+		file.ColumnDeletedOn,
+		file.ColumnDeletedOn,
+		file.ColumnParentID, file.ColumnFileID,
+		file.ColumnFileOwnerID, file.ColumnFileID,
+	)
+	args := []any{nil, fileOwnerID}
+	for _, s := range fileIDs {
+		args = append(args, s)
 	}
 
 	res, err := execQuery(f.database, query, args...)
