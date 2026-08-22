@@ -272,25 +272,98 @@ func TestDeleteFilesInvalidFileId(t *testing.T) {
 }
 
 func TestRestoreDeletedFiles(t *testing.T) {
-	fDb, err := getTestFileGateway()
+	fgw, err := getTestFileGateway()
 	assert.Nil(t, err)
 
-	_, err = fDb.DeleteFiles(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
+	testd := file.NewFile(
+		tests.DbRowInfo.AccountID, "dir1", file.FileTypeDir,
+		"", 0, "", file.UploadCompleted,
+	)
+	testf := file.NewFile(
+		tests.DbRowInfo.AccountID, "file1", file.FileTypeFile,
+		".txt", 0, testd.FileID, file.UploadCompleted,
+	)
+	fileIds := []string{testd.FileID, testf.FileID}
+
+	t.Cleanup(func() {
+		for _, id := range fileIds {
+			DropRows(fgw.database, file.TableName, file.ColumnFileID, id)
+		}
+	})
+
+	err = fgw.AddFile(testd, testf)
 	assert.Nil(t, err)
 
-	qFile, err := fDb.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
-	assert.Nil(t, err)
+	cases := []struct {
+		name        string
+		idsToDelete []string
+	}{
+		{
+			name:        "Restore file",
+			idsToDelete: []string{testf.FileID},
+		},
+		{
+			name:        "Restore folder",
+			idsToDelete: []string{testd.FileID},
+		},
+	}
 
-	assert.NotNil(t, qFile.DeletedOn)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Cleanup(func() {
+				for _, id := range fileIds {
+					// reset DeletedOn to null (default)
+					UpdateRow(
+						fgw.database,
+						file.TableName,
+						file.ColumnFileID,
+						id,
+						[]string{file.ColumnDeletedOn},
+						nil,
+					)
+				}
+			})
 
-	n, err := fDb.RestoreDeletedFiles(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
-	assert.Nil(t, err)
-	assert.Equal(t, n, 1)
+			for _, id := range c.idsToDelete {
+				deln, err := fgw.DeleteFiles(tests.DbRowInfo.AccountID, id)
+				assert.Nil(t, err)
+				assert.Equal(t, deln, 1)
 
-	qFile, err = fDb.GetFile(tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID)
-	assert.Nil(t, err)
+				basefi, err := fgw.GetFile(tests.DbRowInfo.AccountID, id)
+				assert.Nil(t, err)
+				assert.NotNil(t, basefi)
 
-	assert.Nil(t, qFile.DeletedOn)
+				assert.NotNil(t, basefi.DeletedOn)
+
+				resn, err := fgw.RestoreDeletedFiles(tests.DbRowInfo.AccountID, id)
+				assert.Nil(t, err)
+				assert.Equal(t, resn, 1)
+
+				fi, err := fgw.GetFile(tests.DbRowInfo.AccountID, id)
+				assert.Nil(t, err)
+				assert.NotNil(t, fi)
+
+				assert.Equal(t, fi.FileID, id)
+				assert.Nil(t, fi.DeletedOn)
+			}
+		})
+	}
+
+	t.Run("Restore file with deleted parent", func(t *testing.T) {
+		deln, err := fgw.DeleteFiles(tests.DbRowInfo.AccountID, fileIds...)
+		assert.Nil(t, err)
+		assert.Equal(t, deln, 2)
+
+		resn, err := fgw.RestoreDeletedFiles(tests.DbRowInfo.AccountID, testf.FileID)
+		assert.Nil(t, err)
+		assert.Equal(t, resn, 1)
+
+		fi, err := fgw.GetFile(tests.DbRowInfo.AccountID, testf.FileID)
+		assert.Nil(t, err)
+		assert.NotNil(t, fi)
+
+		assert.Equal(t, fi.ParentID, "")
+	})
 }
 
 func TestUpdateModifiedFile(t *testing.T) {
