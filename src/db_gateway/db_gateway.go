@@ -16,6 +16,7 @@ type Gateway struct {
 	File    *FileGateway
 	User    *UserGateway
 	Session *SessionGateway
+	db      *sql.DB
 	Dir     DirectoryStore
 }
 
@@ -37,6 +38,7 @@ func NewGateway(fg *FileGateway, ug *UserGateway, sg *SessionGateway, ds Directo
 		User:    ug,
 		Session: sg,
 		Dir:     ds,
+		db:      fg.database,
 	}
 
 	return gw
@@ -98,4 +100,27 @@ func execQuery(db *sql.DB, query string, args ...any) (sql.Result, error) {
 	}
 
 	return res, err
+}
+
+// SelectQueryRow executes a SELECT query string with any arguments.
+// It requires a pointer type src which will be mutated. src must
+// have public fields. Only a single row is supported for this statement.
+// Slices are not supported.
+//
+// The query is expected to be a SELECT query. If not used, it may
+// have unintended consequences.
+//
+// This is a wrapper around SelectRow for customization.
+func (gw *Gateway) SelectQueryRow(src any, query string, args ...any) error {
+	rows, err := gw.db.Query(query, args...)
+	if err != nil {
+		return err
+	}
+
+	err = SelectRow(rows, src)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
