@@ -151,6 +151,29 @@ func (f *FileGateway) GetFile(fileOwnerId string, fileId string) (*file.File, er
 	return &fr[0], nil
 }
 
+// GetFiles retrieves all files from the given file IDs.
+func (f *FileGateway) GetFiles(fileOwnerId string, fileIds ...string) ([]file.File, error) {
+	q, args, err := sqlquery.Select(
+		file.TableName,
+	).Where().Equal(file.ColumnFileOwnerID, fileOwnerId).
+		And().In(file.ColumnFileID, utils.ConvertToAny(fileIds)...).Build()
+	if err != nil {
+		return nil, logSqlBuildError(f.deps.Log, err, q, args)
+	}
+
+	rows, err := f.database.Query(q, args...)
+	if err != nil {
+		return nil, logQueryError(f.deps.Log, err, q)
+	}
+
+	files, err := f.getFiles(rows)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse rows from query: %v", err)
+	}
+
+	return files, nil
+}
+
 // UpdateFile updates a single File's column based on its file ID and the file owner.
 //
 // Upon update, the modified time will also be updated to the time it was called.
@@ -343,13 +366,14 @@ func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs ...string) (int, e
 }
 
 // RestoreDeletedFiles sets file IDs' deletion column to NULL.
-// It returns the number of rows that are affected and an error.
+// It returns the newly changed file and an error.
 //
 // If the parent folder is being deleted or does not exist with the given file ID,
 // then the parent ID of the given file will be set to root.
-func (f *FileGateway) RestoreDeletedFiles(fileOwnerID string, fileIDs ...string) (int, error) {
-	// TODO: figure out a way to handle this update.
-	// the main issue is the given file IDs can have different parent IDs
+//
+// If the affected rows does not match the length of the given file IDs, then it will return
+// a NoAffectedRowsErr.
+func (f *FileGateway) RestoreDeletedFiles(fileOwnerID string, fileIDs ...string) ([]file.File, error) {
 	query := fmt.Sprintf(`
 		UPDATE %s f
 		LEFT JOIN %s p
@@ -358,14 +382,14 @@ func (f *FileGateway) RestoreDeletedFiles(fileOwnerID string, fileIDs ...string)
 		SET
 			f.%s = ?,
 			f.%s = COALESCE(p.%s, '')
-		WHERE f.%s = ? AND f.%s = ?`,
+		WHERE f.%s = ? AND f.%s IN %s`,
 		file.TableName,
 		file.TableName,
 		file.ColumnFileID, file.ColumnParentID,
 		file.ColumnDeletedOn,
 		file.ColumnDeletedOn,
 		file.ColumnParentID, file.ColumnFileID,
-		file.ColumnFileOwnerID, file.ColumnFileID,
+		file.ColumnFileOwnerID, file.ColumnFileID, sqlquery.BuildPlaceholder(len(fileIDs), 1),
 	)
 	args := []any{nil, fileOwnerID}
 	for _, s := range fileIDs {
@@ -374,7 +398,7 @@ func (f *FileGateway) RestoreDeletedFiles(fileOwnerID string, fileIDs ...string)
 
 	res, err := execQuery(f.database, query, args...)
 	if err != nil {
-		return 0, logQueryError(f.deps.Log, err, query)
+		return nil, logQueryError(f.deps.Log, err, query)
 	}
 
 	n, err := res.RowsAffected()
@@ -384,9 +408,17 @@ func (f *FileGateway) RestoreDeletedFiles(fileOwnerID string, fileIDs ...string)
 		f.deps.Log.Warnf("Failed to query rows for deleted files restoration: %v", err)
 	}
 
+	if int(n) != len(fileIDs) {
+		return nil, NoAffectedRowsErr
+	}
 	f.deps.Log.Debugf("Updated %d rows for restoration", n)
 
-	return int(n), nil
+	fis, err := f.GetFiles(fileOwnerID, fileIDs...)
+	if err != nil {
+		return nil, err
+	}
+
+	return fis, nil
 }
 
 // GetFilesByAccountIdAndParentId retrieves the files of a given folder ID. By default it will
