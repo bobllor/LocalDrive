@@ -366,7 +366,7 @@ func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs ...string) (int, e
 }
 
 // RestoreDeletedFiles sets file IDs' deletion column to NULL.
-// It returns the newly changed file and an error.
+// It returns the restored files slice.
 //
 // If the parent folder is being deleted or does not exist with the given file ID,
 // then the parent ID of the given file will be set to root.
