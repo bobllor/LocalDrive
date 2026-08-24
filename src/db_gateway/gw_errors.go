@@ -14,6 +14,7 @@ var (
 	UsernameInvalidFirstCharErr = errors.New("username must start with a letter")
 	UsernameInvalidEndCharErr   = errors.New("username must end with an alphanumeric character")
 	UsernameIsInvalidErr        = errors.New("username may only consist of alphanumeric characters and single periods")
+	NoAffectedRowsErr           = errors.New("no rows were affected by the query")
 )
 
 // Error used for password validation faillures.

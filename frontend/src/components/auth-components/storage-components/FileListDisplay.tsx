@@ -4,9 +4,12 @@ import { useNavigate } from "react-router";
 import React from "react";
 import { useFileListStore } from "./store/FileListStore";
 import { useShallow } from "zustand/shallow";
-import { createUrl } from "../../../server-utils";
 import type { SetBlurFunc } from "../../ui/BackgroundBlur";
 import type { ModalOperation } from "./StorageHome";
+import DownloadButton from "./file-row-components/DownloadButton";
+import RenameButton from "./file-row-components/RenameButton";
+import DeleteButton from "./file-row-components/DeleteButton";
+import RestoreButton from "./file-row-components/RestoreButton";
 
 type TableHeadObj = {
     text: string
@@ -107,8 +110,6 @@ function FileTableRow({fileObj, setBlur, setModalOp, setFileId}: FileObjProps): 
     )
 }
 
-const BUTTON_CSS = "hover:bg-gray-500 rounded-2xl px-1.5 flex justify-center items-center"
-
 /**
  * Component that represents any non-directory file table data.
  */
@@ -131,32 +132,15 @@ function FileTableData({fileObj, setBlur, setModalOp, setFileId}: FileObjProps):
             </td>
             <td className={"flex"}>
                 {
-                    fileObj.fileType != "dir" &&
-                    <span
-                    className={BUTTON_CSS}
-                    onClick={() => downloadFile(fileObj.fileID)}>
-                        D
-                    </span>
+                    fileObj.fileType != "dir" && <DownloadButton fileObj={fileObj} />
                 }
-                <button
-                onClick={() => renameOnClick(fileObj.fileID)}
-                className={BUTTON_CSS}>
-                    R
-                </button>
+                <RenameButton fileObj={fileObj} renameFunction={renameOnClick} />
+                {
+                    !fileObj.deletedOn 
+                    ? <DeleteButton fileObj={fileObj} />
+                    : <RestoreButton fileObj={fileObj} />
+                }
             </td>
         </>
     )
-}
-
-function downloadFile(fileId: string): void{
-    let a = window.document.createElement("a");
-    const fileUrl = createUrl(`/api/download/file/${fileId}`);
-
-    a.href = fileUrl;
-    a.style.display = "none";
-
-    document.body.appendChild(a);
-
-    a.click();
-    document.body.removeChild(a);
 }

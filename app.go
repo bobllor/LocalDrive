@@ -173,8 +173,11 @@ func createServer(gw *dbgateway.Gateway, logger *gologger.Logger, serverAddress 
 	serv.RegisterHandler(api.FilePostUploadFileCompleteRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadFileComplete))
 	serv.RegisterHandler(api.FilePostUploadFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.UploadGenerateId))
 
-	serv.RegisterHandler(api.FilePatchUpdateFileStatus, ap.CreateRequestMiddleware(ap.FileHandler.UploadFileStatusFailed))
-	serv.RegisterHandler(api.FilePatchRenameFile, ap.CreateAuthMiddleware(ap.FileHandler.RenameFile))
+	serv.RegisterHandler(api.FilePatchUpdateFileStatusRoute, ap.CreateRequestMiddleware(ap.FileHandler.UploadFileStatusFailed))
+	serv.RegisterHandler(api.FilePatchRenameFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.RenameFile))
+
+	serv.RegisterHandler(api.FilePatchRestoreFileRoute, ap.CreateAuthMiddleware(ap.FileHandler.RestoreDeletedFiles))
+	serv.RegisterHandler(api.FileDeleteFileDeleteionRoute, ap.CreateAuthMiddleware(ap.FileHandler.DeleteFile))
 
 	// other
 	serv.RegisterHandler(api.FileGetFolderBreadcrumbsRoute, ap.CreateAuthMiddleware(ap.FileHandler.GetFolderBreadcrumbs))

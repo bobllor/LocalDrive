@@ -35,3 +35,8 @@ type RequestRenameFile struct {
 	FileId      string `json:"fileId"`
 	NewFileName string `json:"newFileName"`
 }
+
+// RequestDeleteFile is the request body for deleting a file.
+type RequestDeleteFile struct {
+	FileIds []string `json:"fileIds"`
+}

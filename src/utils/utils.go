@@ -63,6 +63,24 @@ func StructToAny(s any) []any {
 	return out
 }
 
+// RemoveDuplicates iterates over a slice and checks for duplicate values.
+// It will return a new slice with duplicates removed.
+func RemoveDuplicates[S []T, T comparable](s S) []T {
+	seen := make(map[any]any)
+	slice := make([]T, 0)
+
+	for _, v := range s {
+		_, ok := seen[v]
+		if !ok {
+			seen[v] = struct{}{}
+
+			slice = append(slice, v)
+		}
+	}
+
+	return slice
+}
+
 // getReflectValue gets the value of s. It is a recursive function
 // that will return the first non-pointer value.
 func getReflectValue(v reflect.Value) reflect.Value {

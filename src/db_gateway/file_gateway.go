@@ -45,6 +45,8 @@ type FileGateway struct {
 // It will automatically be sorted in ascending order with dir > file and in alphabetical
 // order.
 //
+// This includes any files set to be deleted.
+//
 // If an error occurs then it will return an error, and abort
 // the scanning process if it is occurring.
 func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, error) {
@@ -83,24 +85,25 @@ func (f *FileGateway) GetAllFiles(fileOwnerID string) ([]file.FileResponse, erro
 
 // GetDeletedFiles retrieves all files that are marked for deletion, or if the
 // deleted column date is not null.
+//
+// The file response will be sorted in the order of file type > file name.
 func (f *FileGateway) GetDeletedFiles(fileOwnerID string) ([]file.FileResponse, error) {
-	query, args, err := sqlquery.Select(
-		file.TableName,
+	query := fmt.Sprintf(
+		`SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+		FROM %s
+		WHERE %s = ? AND %s IS NOT NULL
+		ORDER BY %s, %s`,
 		file.ColumnFileName, file.ColumnFileType,
 		file.ColumnFileID, file.ColumnFileExtension,
 		file.ColumnParentID, file.ColumnFileSize,
 		file.ColumnModifiedOn, file.ColumnDeletedOn,
 		file.ColumnUploadStatus, file.ColumnUniqueHash,
-	).Where().Equal(file.ColumnFileOwnerID, fileOwnerID).And().Is(
-		file.ColumnDeletedOn, "NOT NULL",
-	).Build()
-	if err != nil {
-		return nil, logSqlBuildError(f.deps.Log, err, query, args)
-	}
+		file.TableName,
+		file.ColumnFileOwnerID, file.ColumnDeletedOn,
+		file.ColumnFileType, file.ColumnFileName,
+	)
 
-	// due to the way IS works the last arg must be dropped
-	// TODO: fix this bruh!
-	args = args[:len(args)-1]
+	args := []any{fileOwnerID}
 
 	rows, err := f.database.Query(query, args...)
 	if err != nil {
@@ -146,6 +149,29 @@ func (f *FileGateway) GetFile(fileOwnerId string, fileId string) (*file.File, er
 	}
 
 	return &fr[0], nil
+}
+
+// GetFiles retrieves all files from the given file IDs.
+func (f *FileGateway) GetFiles(fileOwnerId string, fileIds ...string) ([]file.File, error) {
+	q, args, err := sqlquery.Select(
+		file.TableName,
+	).Where().Equal(file.ColumnFileOwnerID, fileOwnerId).
+		And().In(file.ColumnFileID, utils.ConvertToAny(fileIds)...).Build()
+	if err != nil {
+		return nil, logSqlBuildError(f.deps.Log, err, q, args)
+	}
+
+	rows, err := f.database.Query(q, args...)
+	if err != nil {
+		return nil, logQueryError(f.deps.Log, err, q)
+	}
+
+	files, err := f.getFiles(rows)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse rows from query: %v", err)
+	}
+
+	return files, nil
 }
 
 // UpdateFile updates a single File's column based on its file ID and the file owner.
@@ -297,15 +323,15 @@ func (f *FileGateway) UpdateModifiedFiles(fileOwnerID string, fileIDs ...string)
 	return nil
 }
 
-// DeleteFiles sets a slice of file IDs for deletion.
+// DeleteFiles sets a slice of file ID's deletion date for a soft deletion.
+// It will return the number of rows that were affected.
+//
 // It will set the file IDs for deletion by setting the date 15 days from the current
 // date.
-//
-// This method does not delete files from the database immediately.
-func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs ...string) error {
+func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs ...string) (int, error) {
 	if len(fileIDs) == 0 {
 		f.deps.Log.Critical("Failed to delete files, got file IDs length 0")
-		return ServerErr
+		return 0, ServerErr
 	}
 
 	const DAYS_UNTIL_DELETE = 15
@@ -315,37 +341,84 @@ func (f *FileGateway) DeleteFiles(fileOwnerID string, fileIDs ...string) error {
 		Where().Equal(file.ColumnFileOwnerID, fileOwnerID).
 		And().In(file.ColumnFileID, utils.ConvertToAny(fileIDs)...).Build()
 	if err != nil {
-		return logSqlBuildError(f.deps.Log, err, query, args)
+		return 0, logSqlBuildError(f.deps.Log, err, query, args)
 	}
 
 	res, err := execQuery(f.database, query, args...)
 	if err != nil {
 		f.deps.Log.Criticalf("Failed to execute query: %v | Query: %s", err, query)
-		return SqlErr
+		return 0, SqlErr
 	}
 
 	logResultRows(f.deps.Log, res)
 
-	return nil
+	// not sure what to do with the error here. i guess if a wrong DB is used, but
+	// mysql supports this. so will just log and return nil?
+	n, err := res.RowsAffected()
+	if err != nil {
+		f.deps.Log.Warnf("Failed to check affected rows: %v", err)
+		return 0, nil
+	}
+
+	f.deps.Log.Debugf("Marked %d row(s) for deletion", n)
+
+	return int(n), nil
 }
 
-// RestoreFiles sets a file IDs that are unmark files that were marked for deletion.
-func (f *FileGateway) RestoreFiles(fileOwnerID string, fileIDs ...string) error {
-	query, args, err := sqlquery.Update(file.TableName, file.ColumnDeletedOn).Args(nil).
-		Where().Equal(file.ColumnFileOwnerID, fileOwnerID).
-		And().In(file.ColumnFileID, utils.ConvertToAny(fileIDs)...).Build()
-	if err != nil {
-		return logSqlBuildError(f.deps.Log, err, query, args)
+// RestoreDeletedFiles sets file IDs' deletion column to NULL.
+// It returns the restored files slice.
+//
+// If the parent folder is being deleted or does not exist with the given file ID,
+// then the parent ID of the given file will be set to root.
+//
+// If the affected rows does not match the length of the given file IDs, then it will return
+// a NoAffectedRowsErr.
+func (f *FileGateway) RestoreDeletedFiles(fileOwnerID string, fileIDs ...string) ([]file.File, error) {
+	query := fmt.Sprintf(`
+		UPDATE %s f
+		LEFT JOIN %s p
+			ON p.%s = f.%s
+			AND p.%s IS NULL
+		SET
+			f.%s = ?,
+			f.%s = COALESCE(p.%s, '')
+		WHERE f.%s = ? AND f.%s IN %s`,
+		file.TableName,
+		file.TableName,
+		file.ColumnFileID, file.ColumnParentID,
+		file.ColumnDeletedOn,
+		file.ColumnDeletedOn,
+		file.ColumnParentID, file.ColumnFileID,
+		file.ColumnFileOwnerID, file.ColumnFileID, sqlquery.BuildPlaceholder(len(fileIDs), 1),
+	)
+	args := []any{nil, fileOwnerID}
+	for _, s := range fileIDs {
+		args = append(args, s)
 	}
 
 	res, err := execQuery(f.database, query, args...)
 	if err != nil {
-		return logQueryError(f.deps.Log, err, query)
+		return nil, logQueryError(f.deps.Log, err, query)
 	}
 
-	logResultRows(f.deps.Log, res)
+	n, err := res.RowsAffected()
+	// mentioned this before, but this is supported with mysql
+	// will just log and move on.
+	if err != nil {
+		f.deps.Log.Warnf("Failed to query rows for deleted files restoration: %v", err)
+	}
 
-	return nil
+	if int(n) != len(fileIDs) {
+		return nil, NoAffectedRowsErr
+	}
+	f.deps.Log.Debugf("Updated %d rows for restoration", n)
+
+	fis, err := f.GetFiles(fileOwnerID, fileIDs...)
+	if err != nil {
+		return nil, err
+	}
+
+	return fis, nil
 }
 
 // GetFilesByAccountIdAndParentId retrieves the files of a given folder ID. By default it will
@@ -354,6 +427,8 @@ func (f *FileGateway) RestoreFiles(fileOwnerID string, fileIDs ...string) error 
 //   - file name
 //
 // If the given parent folder ID does not exist, it will return a 404 and an error.
+//
+// Deleted files are not included.
 func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFolderID string) ([]file.File, error) {
 	if parentFolderID != "" {
 		validID, err := f.validateFileExists(accountId, parentFolderID)
@@ -376,7 +451,7 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 		FROM %s f 
 		JOIN %s 
 			ON u.%s = f.%s 
-		WHERE u.%s = ? AND f.%s = ?
+		WHERE u.%s = ? AND f.%s = ? AND f.%s IS NULL
 		ORDER BY f.%s, f.%s
 		`,
 		file.TableName,
@@ -385,6 +460,7 @@ func (f *FileGateway) GetFilesByAccountIdAndParentId(accountId string, parentFol
 		file.ColumnFileOwnerID,
 		user.ColumnAccountID,
 		file.ColumnParentID,
+		file.ColumnDeletedOn,
 		file.ColumnFileType,
 		file.ColumnFileName,
 	)
@@ -454,7 +530,7 @@ func (f *FileGateway) GetBreadcrumbs(accountId, folderId string) ([]BreadcrumbFi
 		return nil, err
 	}
 
-	f.deps.Log.Debugf("FileFolderInfo rows found: %d", len(files))
+	f.deps.Log.Debugf("Breadcrumb rows found: %d", len(files))
 
 	// reverse for breadcrumbs
 	slices.Reverse(files)

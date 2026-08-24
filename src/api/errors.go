@@ -31,6 +31,9 @@ var (
 
 	// ReasonUnauthorized is used for unauthenticated requests.
 	ReasonUnauthorized ReasonCode = "UNAUTHORIZED"
+
+	// ReasonNotFound is used for resource that is not found or doesn't exist.
+	ReasonNotFound ReasonCode = "NOT_FOUND"
 )
 
 var (
@@ -38,3 +41,13 @@ var (
 	ErrorUnauthorizedMsg  = "Unauthorized access"
 	ErrorBadDataMsg       = "Bad request data"
 )
+
+type responseError struct {
+	Message string
+	Code    int
+	Reason  ReasonCode
+}
+
+func (re *responseError) Error() string {
+	return re.Message
+}

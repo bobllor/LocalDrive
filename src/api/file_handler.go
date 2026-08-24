@@ -27,8 +27,10 @@ const (
 	FilePostUploadFileCompleteRoute = "POST /api/upload/{id}/complete"
 	FilePostDownloadFileRoute       = "GET /api/download/file/{fileId}"
 	FilePostAddFolderRoute          = "POST /api/folders/add"
-	FilePatchUpdateFileStatus       = "PATCH /api/upload/{id}/fail"
-	FilePatchRenameFile             = "PATCH /api/file/rename"
+	FilePatchUpdateFileStatusRoute  = "PATCH /api/upload/{id}/fail"
+	FilePatchRenameFileRoute        = "PATCH /api/file/rename"
+	FilePatchRestoreFileRoute       = "PATCH /api/file/restore/{id}"
+	FileDeleteFileDeleteionRoute    = "DELETE /api/file/delete/{id}"
 )
 
 const CHUNKS_DIR_NAME = "lcschunks"
@@ -612,8 +614,13 @@ func (fh *FileHandler) PostAddFolder(w http.ResponseWriter, r *http.Request) {
 	fh.util.Log.Infof("Wrote %d bytes to response body", n)
 }
 
-// GetFiles retrieves a slice of Files based on the account ID and the given
-// parent folder ID.
+// GetFiles retrieves all files associated with the account ID and the given
+// parent folder ID. By default it will ignore deleted files.
+//
+// The method also supports retrieving deleted files only that are
+// associated with an account ID by using including the query "type=trash".
+//
+// It returns a *ApiResponse[[]FileResponse].
 //
 // If a parent folder ID is given, it will retrieve those parent folder files.
 // If parent folder is empty, then it will retrieve the files with no parent or the
@@ -622,7 +629,7 @@ func (fh *FileHandler) PostAddFolder(w http.ResponseWriter, r *http.Request) {
 // This requires the auth middleware wrapper due to the context.
 func (fh *FileHandler) GetFiles(w http.ResponseWriter, r *http.Request) {
 	parentID := r.PathValue("parentId")
-	fh.util.Log.Debugf("Request query: %v", parentID)
+	fh.util.Log.Debugf("Requested files parent ID: %v", parentID)
 
 	userContext, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
 	if !ok {
@@ -630,20 +637,33 @@ func (fh *FileHandler) GetFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	files, err := fh.gateway.File.GetFilesByAccountIdAndParentId(userContext.AccountId, parentID)
-	if err == dbgateway.FileDoesNotExistErr {
-		fh.util.Log.Infof("Given file ID %s does not exist: %v", parentID, err)
-		WriteErrorResponse(w, "Invalid file ID", http.StatusBadRequest, ReasonBadRequestData)
-		return
+	queryType := r.URL.Query().Get("type")
+	var files []file.FileResponse
+	var queryError error
+
+	fh.util.Log.Debugf("Query type: %s", queryType)
+
+	switch queryType {
+	case "trash":
+		afiles, err := fh.getDeletedFiles(userContext.AccountId)
+		queryError = err
+
+		files = afiles
+	default:
+		afiles, err := fh.getFiles(userContext.AccountId, parentID)
+		queryError = err
+
+		files = afiles
 	}
-	if err != nil {
-		fh.util.Log.Criticalf("Failed to retrieve files with session ID and parent folder ID: %v", err)
-		WriteErrorResponse(w, ErrorInternalErrorMsg, http.StatusInternalServerError, ReasonInternalError)
+
+	if queryError != nil {
+		respErr := queryError.(*responseError)
+		WriteErrorResponse(w, respErr.Message, respErr.Code, respErr.Reason)
 		return
 	}
 
-	convertedFiles := file.ToFileResponses(files...)
-	res := NewApiResponse(convertedFiles)
+	fh.util.Log.Debugf("%d files found (parentId=%s)", len(files), parentID)
+	res := NewApiResponse(files)
 	n, err := WriteResponse(w, res)
 	if err != nil {
 		fh.util.Log.Criticalf("Failed to write response to client: %v", err)
@@ -672,7 +692,7 @@ func (fh *FileHandler) GetFolderBreadcrumbs(w http.ResponseWriter, r *http.Reque
 	}
 	folderId := r.PathValue("folderId")
 	if folderId == "" {
-		fh.util.HttpWriteCustomBadDataError(w, "No folder ID given.", ReasonBadRequestData, "No folder ID given")
+		fh.util.HttpWriteCustomBadDataError(w, "No folder ID given", ReasonBadRequestData, "No folder ID given")
 		return
 	}
 
@@ -682,7 +702,7 @@ func (fh *FileHandler) GetFolderBreadcrumbs(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if len(folders) == 0 {
-		fh.util.HttpWriteCustomBadDataErrorf(w, "File not found.", ReasonBadRequestData, "No folders found for ID %s", folderId)
+		fh.util.HttpWriteCustomBadDataErrorf(w, "File not found", ReasonBadRequestData, "No folders found for ID %s", folderId)
 		return
 	}
 
@@ -692,6 +712,64 @@ func (fh *FileHandler) GetFolderBreadcrumbs(w http.ResponseWriter, r *http.Reque
 	}
 
 	fh.util.Log.Debugf("Wrote %d bytes to response with folders", n)
+}
+
+// RestoreDeletedFiles restores a deleted file by updating the column to nil.
+// If the parent folder of the restored file is deleted or is missing, it will
+// update the parent ID to the root folder.
+//
+// Upon a successful restoration, it will return a ResponseApi[[]FileResponse].
+//
+// This requires the auth middleware.
+func (fh *FileHandler) RestoreDeletedFiles(w http.ResponseWriter, r *http.Request) {
+	fileId := r.PathValue("id")
+
+	if strings.TrimSpace(fileId) == "" {
+		fh.util.HttpWriteCustomBadDataError(
+			w,
+			"File ID cannot be empty",
+			ReasonBadRequestData,
+			"Empty file ID given for restoration",
+		)
+		return
+	}
+
+	usercontext, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
+	if !ok {
+		fh.util.HttpWriteUnauthorizedError(w, r)
+		return
+	}
+
+	files, err := fh.gateway.File.RestoreDeletedFiles(usercontext.AccountId, fileId)
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "An internal error occurred while restoring deleted files: %v", err)
+		return
+	}
+
+	fh.util.Log.Infof("Restored %d files", len(files))
+
+	filesRes := file.ToFileResponses(files...)
+
+	apires := NewApiResponse(filesRes)
+	// TODO: batch API endpoint will be supported, ADD LATER. this is expected to only be 1.
+	if len(files) != 1 {
+		resError := &Error{
+			Code:    http.StatusNotFound,
+			Reason:  ReasonNotFound,
+			Message: "Failed to restore file, the file does not exist",
+		}
+
+		apires.Status = StatusSuccess
+		apires.Error = resError
+	}
+
+	bn, err := WriteResponse(w, apires)
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "Failed to write response: %v", err)
+		return
+	}
+
+	fh.util.Log.Debugf("Wrote %d bytes for restoration response", bn)
 }
 
 // RenameFile renames a file via a PATCH request. Upon a successful name change, it will return back
@@ -771,6 +849,57 @@ func (fh *FileHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
 	fh.util.Log.Debugf("Wrote %d bytes to response for rename file", n)
 }
 
+// DeleteFile soft deletes a file ID by setting the DeleteOn value to
+// the time of the request was received.
+//
+// It will return a boolean response indicating its status. If all rows
+// are successfully updated, then it will return a success.
+func (fh *FileHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
+	usrContext, ok := GetRequestContext[*dbgateway.UserSessionInfo](r, CONTEXT_USER_SESSION_KEY)
+	if !ok {
+		fh.util.HttpWriteUnauthorizedError(w, r)
+		return
+	}
+	defer r.Body.Close()
+
+	fileId := r.PathValue("id")
+	if strings.TrimSpace(fileId) == "" {
+		fh.util.HttpWriteCustomBadDataError(w, "Missing file ID", ReasonBadRequestData, "Given File ID for deletion is empty")
+		return
+	}
+
+	deletedRows, err := fh.gateway.File.DeleteFiles(usrContext.AccountId, fileId)
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "An error occurred while deleting file (%s): %v", fileId, err)
+		return
+	}
+
+	res := NewApiResponse(deletedRows == 1)
+	// output will either be 1 or 0, if it is 0 then this has failed.
+	if res.Output == false {
+		resError := &Error{
+			Code:    http.StatusNotFound,
+			Reason:  ReasonNotFound,
+			Message: "Failed to delete file, the file does not exist",
+		}
+
+		res.Status = StatusSuccess
+		res.Error = resError
+	}
+
+	resBytes, err := WriteResponse(w, res)
+	if err != nil {
+		fh.util.HttpWriteInternalError(w, "Failed to write response: %v", err)
+		return
+	}
+
+	if res.Output {
+		fh.util.Log.Infof("Marked file for deletion (%s)", fileId)
+	}
+
+	fh.util.Log.Debugf("Wrote %d bytes to response", resBytes)
+}
+
 // mkAccountDir creates the directory of the account ID in the storage folder.
 //
 // It will return the directory path upon creation or if it already exists.
@@ -824,4 +953,51 @@ func (fh *FileHandler) removeFiles(paths ...string) {
 			fh.util.Log.Infof("Removed file %s", path)
 		}
 	}
+}
+
+// getFiles is a helper method to retrieve the files. It will return the file response
+// and an error if one occurs.
+//
+// The error is a type responseError, which can be converted for additional information.
+func (fh *FileHandler) getFiles(accountId, parentId string) ([]file.FileResponse, error) {
+	files, err := fh.gateway.File.GetFilesByAccountIdAndParentId(accountId, parentId)
+	if err == dbgateway.FileDoesNotExistErr {
+		fh.util.Log.Infof("Given file ID %s does not exist: %v", parentId, err)
+
+		return nil, &responseError{
+			Message: "Invalid file ID",
+			Code:    http.StatusBadRequest,
+			Reason:  ReasonBadRequestData,
+		}
+	}
+	if err != nil {
+		fh.util.Log.Criticalf("Failed to retrieve files with session ID and parent folder ID: %v", err)
+
+		return nil, &responseError{
+			Message: ErrorInternalErrorMsg,
+			Code:    http.StatusInternalServerError,
+			Reason:  ReasonInternalError,
+		}
+	}
+
+	return file.ToFileResponses(files...), nil
+}
+
+// getDeletedFiles is a helper method that retrieves the deleted files. It will return the
+// FileResponse and an error.
+//
+// The error is a type responseError, which can be converted for additional information.
+func (fh *FileHandler) getDeletedFiles(accountId string) ([]file.FileResponse, error) {
+	files, err := fh.gateway.File.GetDeletedFiles(accountId)
+	if err != nil {
+		fh.util.Log.Criticalf("An error occurred while retrieving deleted files: %v", err)
+
+		return nil, &responseError{
+			Message: ErrorInternalErrorMsg,
+			Code:    http.StatusInternalServerError,
+			Reason:  ReasonInternalError,
+		}
+	}
+
+	return files, nil
 }

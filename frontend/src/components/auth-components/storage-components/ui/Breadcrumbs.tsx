@@ -28,7 +28,8 @@ export default function Breadcrumbs(): JSX.Element{
     return (
         <div className="flex items-center justify-center">
             {breadcrumbs.map((obj, i) => (
-                <nav className="flex items-center justify-center">
+                <nav className="flex items-center justify-center"
+                key={obj.fileId}>
                     <div 
                     className="p-2 flex justify-center items-center hover:bg-gray-400/50 select-none"
                     key={i}>

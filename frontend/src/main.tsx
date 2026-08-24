@@ -30,7 +30,8 @@ const router = createBrowserRouter([
         middleware: [authMiddleware],
         children: [
           {index: true, loader: getUserContext, element: <StorageHome />},
-          {path: "folder/:folderId", loader: getUserContext, element: <StorageHome />}
+          {path: "folder/:folderId", loader: getUserContext, element: <StorageHome />},
+          {path: "trash", loader: getUserContext, element: <StorageHome />},
         ]
       },
     ]

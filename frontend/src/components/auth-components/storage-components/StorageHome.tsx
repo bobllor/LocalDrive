@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useRef, useState, type JSX, type RefObject } from "react";
 import { useNavigate, useParams } from "react-router";
 import { fetchApi } from "../../../functions/fetchtils";
-import { useFileStore, type FileResponse } from "../../../context/FileStore";
+import { fileStoreKeys, useFileStore, type FileResponse } from "../../../context/FileStore";
 import FileListDisplay from "./FileListDisplay";
 import FileOpButton from "./file-ops-components/FileOpButton";
 import BackgroundBlur from "../../ui/BackgroundBlur";
@@ -10,6 +10,7 @@ import ModalBase from "../../ui/ModalBase";
 import { FileUploader } from "./file-ops-components/file-uploader";
 import Breadcrumbs from "./ui/Breadcrumbs";
 import RenameFile from "../modal-components/RenameFile";
+import { NavigationMenu } from "./NavigationMenu";
 
 export type ModalOperation = "" | "addFolder" | "renameFile";
 
@@ -35,7 +36,9 @@ export default function StorageHome(): JSX.Element{
     }
 
     const navigate = useNavigate();
-    const files = useFileDisplay();
+
+    let files: Array<FileResponse> = [];
+    files = useFileDisplay();
 
     const [showBlur, setShowBlur] = useState(false);
     const [modalOp, setModalOp] = useState<ModalOperation>("");
@@ -67,7 +70,8 @@ export default function StorageHome(): JSX.Element{
                     Logout
                 </button>
                 <Breadcrumbs />
-                <div className="w-full border">
+                <div className="w-full border flex">
+                    <NavigationMenu />
                     <Suspense fallback={<div>Temporary: Loading...</div>}>
                         <FileListDisplay files={files} setBlur={setShowBlur} setModalOp={setModalOp} setFileId={setFileId} />
                     </Suspense>
@@ -142,19 +146,29 @@ async function onInputFileChangeUploadFile(ref: RefObject<HTMLInputElement | nul
 
 /**
  * A hook that retrieves the files from the API with the given folder ID
- * from the URL parameters.
+ * from the URL parameters. It handles both normal and trash files.
  * 
  * @returns An array of FileResponses
  */
 function useFileDisplay(): Array<FileResponse>{
+    const trashPath = "/storage/trash";
     // :folderId param, will be either empty or with the route folder/:folderId
     let params = useParams();
 
-    const {setFiles, getFiles} = useFileStore();
-    const files = getFiles(params.folderId);
+    const {setFiles, getFiles, setFilesTrash} = useFileStore();
+    const pathname = window.location.pathname;
+    let files = getFiles(params.folderId);
+    
+    if(pathname === trashPath){
+        files = getFiles(fileStoreKeys.trash);
+    }
 
     useEffect(() => {
-        setFiles(params.folderId);
+        if(pathname !== trashPath){
+            setFiles(params.folderId);
+        }else{
+            setFilesTrash();
+        }
     }, [params.folderId]);
 
     return files;

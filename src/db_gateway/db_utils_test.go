@@ -194,3 +194,33 @@ func TestMakeArgsPtr(t *testing.T) {
 
 	assert.Equal(t, len(args), len(s1))
 }
+
+func TestExecuteQueryRow(t *testing.T) {
+	gw, _ := NewTestGatewayDB(t)
+
+	cases := []struct {
+		name       string
+		query      string
+		args       []any
+		compareArg any
+		file       *file.File
+		addFile    *file.File
+	}{
+		{
+			name:  "Select query",
+			query: fmt.Sprintf("SELECT * FROM %s WHERE %s = ? AND %s = ?", file.TableName, file.ColumnFileOwnerID, file.ColumnFileID),
+			args:  []any{tests.DbRowInfo.AccountID, tests.DbRowInfo.FileID},
+			file:  &file.File{},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := gw.SelectQueryRow(c.file, c.query, c.args...)
+			assert.Nil(t, err)
+
+			assert.Equal(t, tests.DbRowInfo.FileID, c.file.FileID)
+			assert.Equal(t, tests.DbRowInfo.AccountID, c.file.OwnerID)
+		})
+	}
+}

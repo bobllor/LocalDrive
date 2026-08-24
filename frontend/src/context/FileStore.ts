@@ -18,6 +18,10 @@ type FileStore = {
      */
     setFiles: (parentId?: string) => Promise<void>
     /**
+     * Sets the contents of the files for the deleted files.
+     */
+    setFilesTrash: () => Promise<void>
+    /**
      * Retrieves the files based on the parent ID. If the parent ID does not exist,
      * it will return an empty array.
      * @param parentId The parent ID of the files, this can be null indicating it is the root folder
@@ -38,9 +42,18 @@ type FileStore = {
     /**
      * Adds a new FileResponse to the store. Upon adding a file, it will be
      * sorted based on the sort criteria.
-     * @returns 
      */
     addFileResponse: (file: FileResponse, parentId?: string) => Promise<void>,
+    /**
+     * Removes a File entry from a given parent ID folder. It will update
+     * the parent key's array upon success. It will return the file that has been
+     * removed or undefined if it does not exist.
+     * 
+     * @param fileId The file ID of the file being removed
+     * @param parentId The parent the file is located in
+     * @returns The removed File if it exists or undefined
+     */
+    removeFile: (fileId: string, parentId?: string) => FileResponse | undefined,
     /**
      * Replaces a file with the same file ID given in the FileResponse object.
      * If the file does not exist, then it will append the object to the store.
@@ -71,6 +84,10 @@ export type FileResponse = {
     uniqueHash: string
 }
 
+export const fileStoreKeys = {
+    trash: "trash",
+}
+
 export const useFileStore = create<FileStore>((set, get) => ({
     files: {},
     setFiles: async (parentId?: string) => {
@@ -88,6 +105,23 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
             const newObj: Record<string, FileResponse[]> = {};
             newObj[key] = newFiles.output;
+
+            set(state => ({...state, files: {...state.files, ...newObj}}));
+        }catch(e){
+            throw e;
+        }
+    },
+    setFilesTrash: async () => {
+        const route = `/api/storage?type=trash`;
+
+        try{
+            const res = await fetchApi<Array<FileResponse>>(route);
+            
+            // unsure why an empty array is undefined with this route (backend -> frontend).
+            const files: Array<FileResponse> = res.output || [];
+
+            const newObj: Record<string, FileResponse[]> = {};
+            newObj[fileStoreKeys.trash] = files;
 
             set(state => ({...state, files: {...state.files, ...newObj}}));
         }catch(e){
@@ -159,6 +193,21 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
         set(st => ({...st, files: {...st.files, [key]: files}}));
     },
+    removeFile: (fileId: string, parentId?: string) => {
+        const key = getParentIdUndefined(parentId);
+
+        let files = get().getFiles(key);
+        let targetFile = files.find(file => file.fileID == fileId);
+
+        if(targetFile != undefined){
+            files = files.filter(file => file.fileID != fileId);
+            
+            // sets the new array after removal.
+            set(st => ({...st, files: {...st.files, [key]: files}}));
+        }
+
+        return targetFile;
+    }
 }));
 
 /**
