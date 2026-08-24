@@ -970,7 +970,7 @@ func TestRestoreDeletedFile(t *testing.T) {
 		hasError bool
 	}{
 		{
-			name: "Normal run",
+			name: "File restoration",
 			file: &file.File{
 				OwnerID:    tests.DbRowInfo.AccountID,
 				Name:       "filename",
@@ -982,7 +982,19 @@ func TestRestoreDeletedFile(t *testing.T) {
 			},
 		},
 		{
-			name:     "Invalid ID",
+			name: "Folder restoration",
+			file: &file.File{
+				OwnerID:    tests.DbRowInfo.AccountID,
+				Name:       "dirname",
+				Type:       file.FileTypeDir,
+				Size:       0,
+				Extension:  "",
+				FileID:     uuid.NewString(),
+				ModifiedOn: time.Now().UTC(),
+			},
+		},
+		{
+			name:     "Bad file ID",
 			hasError: true,
 		},
 	}
@@ -1020,12 +1032,12 @@ func TestRestoreDeletedFile(t *testing.T) {
 			assert.Nil(t, err)
 			defer res.Body.Close()
 
-			var apires *ApiResponse[bool]
+			var apires *ApiResponse[[]file.FileResponse]
 			err = json.NewDecoder(res.Body).Decode(&apires)
 
 			if !c.hasError {
 				assert.NotNil(t, apires)
-				assert.True(t, apires.Output)
+				assert.Equal(t, len(apires.Output), 1)
 
 				fi, err := gw.File.GetFile(tests.DbRowInfo.AccountID, fileId)
 				assert.Nil(t, err)
@@ -1034,10 +1046,62 @@ func TestRestoreDeletedFile(t *testing.T) {
 				assert.NotNil(t, apires)
 				assert.NotNil(t, apires.Error)
 
-				assert.False(t, apires.Output)
+				assert.Equal(t, len(apires.Output), 0)
 			}
 		})
 	}
+
+	t.Run("Restore deleted file with deleted parent", func(t *testing.T) {
+		testd := file.NewFile(
+			tests.DbRowInfo.AccountID, "testdir", file.FileTypeFile,
+			".txt", 0, "", file.UploadCompleted,
+		)
+		testf := file.NewFile(
+			tests.DbRowInfo.AccountID, "testfile", file.FileTypeFile,
+			".txt", 0, testd.FileID, file.UploadCompleted,
+		)
+
+		fileIds := []string{testd.FileID, testf.FileID}
+
+		t.Cleanup(func() {
+			for _, id := range fileIds {
+				dbgateway.DropRows(db, file.TableName, file.ColumnFileID, id)
+			}
+		})
+
+		err := gw.File.AddFile(testd, testf)
+		assert.Nil(t, err)
+
+		deln, err := gw.File.DeleteFiles(tests.DbRowInfo.AccountID, fileIds...)
+		assert.Nil(t, err)
+		assert.Equal(t, deln, len(fileIds))
+
+		basefi, err := gw.File.GetFile(tests.DbRowInfo.AccountID, testf.FileID)
+		assert.Nil(t, err)
+
+		assert.NotNil(t, basefi.DeletedOn)
+
+		req, err := tests.NewRequest("PATCH", serv.URL+"/api/file/restore/"+testf.FileID, nil)
+		assert.Nil(t, err)
+
+		req.AddCookie(tests.GetCookie(CookieSessionKey))
+
+		res, err := tc.Do(req)
+		assert.Nil(t, err)
+		defer res.Body.Close()
+
+		var apires *ApiResponse[[]file.FileResponse]
+		err = json.NewDecoder(res.Body).Decode(&apires)
+		assert.Nil(t, err)
+
+		assert.Equal(t, apires.Status, StatusSuccess)
+		assert.Equal(t, len(apires.Output), 1)
+
+		fi := apires.Output[0]
+
+		assert.Equal(t, fi.FileID, testf.FileID)
+		assert.Nil(t, fi.DeletedOn)
+	})
 }
 
 // newTestServer creates a new test HTTP server with all the
