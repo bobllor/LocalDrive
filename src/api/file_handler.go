@@ -715,8 +715,10 @@ func (fh *FileHandler) GetFolderBreadcrumbs(w http.ResponseWriter, r *http.Reque
 }
 
 // RestoreDeletedFiles restores a deleted file by updating the column to nil.
+// If the parent folder of the restored file is deleted or is missing, it will
+// update the parent ID to the root folder.
 //
-// Upon a successful restoration, it will return a ResponseApi[bool].
+// Upon a successful restoration, it will return a ResponseApi[[]FileResponse].
 //
 // This requires the auth middleware.
 func (fh *FileHandler) RestoreDeletedFiles(w http.ResponseWriter, r *http.Request) {
@@ -738,16 +740,19 @@ func (fh *FileHandler) RestoreDeletedFiles(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	n, err := fh.gateway.File.RestoreDeletedFiles(usercontext.AccountId, fileId)
+	files, err := fh.gateway.File.RestoreDeletedFiles(usercontext.AccountId, fileId)
 	if err != nil {
 		fh.util.HttpWriteInternalError(w, "An internal error occurred while restoring deleted files: %v", err)
 		return
 	}
 
-	fh.util.Log.Infof("Restored %d files", n)
+	fh.util.Log.Infof("Restored %d files", len(files))
 
-	apires := NewApiResponse(n == 1)
-	if !apires.Output {
+	filesRes := file.ToFileResponses(files...)
+
+	apires := NewApiResponse(filesRes)
+	// TODO: batch API endpoint will be supported, ADD LATER. this is expected to only be 1.
+	if len(files) != 1 {
 		resError := &Error{
 			Code:    http.StatusNotFound,
 			Reason:  ReasonNotFound,
