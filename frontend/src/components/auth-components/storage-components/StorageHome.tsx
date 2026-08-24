@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useRef, useState, type JSX, type RefObject } from "react";
 import { useNavigate, useParams } from "react-router";
 import { fetchApi } from "../../../functions/fetchtils";
-import { useFileStore, type FileResponse } from "../../../context/FileStore";
+import { fileStoreKeys, useFileStore, type FileResponse } from "../../../context/FileStore";
 import FileListDisplay from "./FileListDisplay";
 import FileOpButton from "./file-ops-components/FileOpButton";
 import BackgroundBlur from "../../ui/BackgroundBlur";
@@ -38,12 +38,7 @@ export default function StorageHome(): JSX.Element{
     const navigate = useNavigate();
 
     let files: Array<FileResponse> = [];
-    // TODO: change this to be a proper check, for now keep for development
-    if(window.location.href.endsWith("/storage/trash")){
-        files = useFileDisplayTrash();
-    }else{
-        files = useFileDisplay();
-    }
+    files = useFileDisplay();
 
     const [showBlur, setShowBlur] = useState(false);
     const [modalOp, setModalOp] = useState<ModalOperation>("");
@@ -151,38 +146,30 @@ async function onInputFileChangeUploadFile(ref: RefObject<HTMLInputElement | nul
 
 /**
  * A hook that retrieves the files from the API with the given folder ID
- * from the URL parameters.
+ * from the URL parameters. It handles both normal and trash files.
  * 
  * @returns An array of FileResponses
  */
 function useFileDisplay(): Array<FileResponse>{
+    const trashPath = "/storage/trash";
     // :folderId param, will be either empty or with the route folder/:folderId
     let params = useParams();
 
-    const {setFiles, getFiles} = useFileStore();
-    const files = getFiles(params.folderId);
+    const {setFiles, getFiles, setFilesTrash} = useFileStore();
+    const pathname = window.location.pathname;
+    let files = getFiles(params.folderId);
+    
+    if(pathname === trashPath){
+        files = getFiles(fileStoreKeys.trash);
+    }
 
     useEffect(() => {
-        setFiles(params.folderId);
+        if(pathname !== trashPath){
+            setFiles(params.folderId);
+        }else{
+            setFilesTrash();
+        }
     }, [params.folderId]);
-
-    return files;
-}
-
-/**
- * Hook used to retrieve deleted files from the API to display
- * for the trash section.
- * 
- * Unlike the normal display hook, this fetches a different API without params.
- */
-function useFileDisplayTrash(): Array<FileResponse>{
-    const {setFilesTrash, getFiles} = useFileStore();
-    const files = getFiles("trash");
-
-    useEffect(() => {
-        setFilesTrash();
-        // TODO: add dependency here.
-    }, [])
 
     return files;
 }
